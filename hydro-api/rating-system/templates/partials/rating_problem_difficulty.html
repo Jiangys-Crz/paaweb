@@ -1,0 +1,6 @@
+{% set difficultyRating = model.problem.ratingValue(pdoc) %}
+{% if difficultyRating %}
+<span class="rating-problem-score rating-problem-score--{{ model.problem.ratingColor(pdoc) }}" data-problem-rating="{{ difficultyRating }}" title="{{ _('Estimated from independent solving results and historical site Rating.') }}">{{ difficultyRating }}</span>{% if pdoc.problemRating.provisional %}<small class="rating-problem-provisional" title="{{ _('Provisional rating: fewer than 20 independent users.') }}">{{ _('Provisional') }}</small>{% endif %}
+{% else %}
+<span class="rating-problem-pending" data-problem-rating="pending" title="{{ _('At least 5 independent users are needed to estimate difficulty.') }}">{{ _('Awaiting rating') }}</span>
+{% endif %}

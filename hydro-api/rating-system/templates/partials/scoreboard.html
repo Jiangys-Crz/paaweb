@@ -1,0 +1,66 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+{% import 'components/rating_board_icons.html' as icons %}
+{% if not ratingBoard %}
+  {% include 'partials/rating_native_scoreboard.html' %}
+{% else %}
+<div data-fragment-id="scoreboard">
+  <div class="rating-board-fit" data-rating-board-fit>
+    <div class="rating-board-fit-slot">
+      <div class="rating-board-fit-inner" data-board-width="{{ ratingBoard.width }}">
+        <table class="data-table rank-table" aria-label="Contest leaderboard">
+          <colgroup>
+            <col style="width:40px"><col style="width:48px"><col style="width:130px"><col style="width:220px">
+            {% if ratingBoard.acm %}<col style="width:45px"><col style="width:55px">{% else %}<col style="width:70px">{% endif %}
+            {% for problem in ratingBoard.problems %}<col style="width:{{ 54 if ratingBoard.acm else 42 }}px">{% endfor %}
+          </colgroup>
+          <thead>
+            <tr>
+              <th>#</th><th>Rk</th><th>{{ 'Institution' if ratingBoard.acm else 'Inst' }}</th><th>Person</th>
+              {% if ratingBoard.acm %}<th>S</th><th>P</th>{% else %}<th>Score</th>{% endif %}
+              {% for problem in ratingBoard.problems %}
+              <th class="problem-col"><a href="{{ url('problem_detail', pid=problem.pid, query={tid:tdoc.docId}) }}" data-tooltip="{{ problem.title }}"><span class="problem-heading">{{ problem.label }}</span><span class="problem-heading-info">{{ problem.accepted if ratingBoard.acm else problem.maxScore }}</span></a></th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% set canViewAll = handler.user.own(tdoc) or model.contest.canShowRecord.call(handler, tdoc) %}
+            {% for participant in ratingBoard.participants %}
+            {% set participantUser = udict[participant.uid] %}
+            {% set canView = canViewAll or handler.user._id == participant.uid %}
+            <tr data-rating-board-participant data-uid="{{ participant.uid }}" data-unrank="{{ '1' if participant.unrank else '0' }}" data-board-search="{{ participantUser.uname }} {{ participant.displayName }} {{ participant.school }}">
+              <td>{{ participant.index }}</td>
+              <td><span class="rank-number {{ 'rank--unrank' if participant.unrank else 'rank--normal' }}">{{ participant.rank }}{% if participant.rank == '1' %}<span class="rank-trophy" aria-label="First place">{{ icons.render('trophy') }}</span>{% endif %}</span></td>
+              <td class="rank-institution" title="{{ participant.school }}">{% if ratingBoard.acm %}<span class="rank-institution-icon" aria-hidden="true">{{ icons.render('bank') }}</span>{% endif %}{{ participant.school or 'Unknown' }}</td>
+              <td class="user-col">
+                <div class="rank-entry">
+                  <img class="rank-entry-avatar" src="{{ avatarUrl(participantUser.avatar|default('')) }}" alt="" width="{{ 36 if ratingBoard.acm else 24 }}" height="{{ 36 if ratingBoard.acm else 24 }}" loading="lazy">
+                  <div class="rank-entry-text"><a class="rank-entry-title" href="{{ url('user_detail', uid=participant.uid) }}">{{ participantUser.uname }}{% if participant.unrank %}<span aria-label="Unofficial">⭐</span>{% endif %}</a>{% if participant.displayName and participant.displayName != participantUser.uname %}<span class="rank-entry-members">{{ participant.displayName }}</span>{% endif %}</div>
+
+                </div>
+              </td>
+              {% if ratingBoard.acm %}<td><span class="rank-solved">{{ participant.solved }}</span></td><td><span class="rank-penalty">{{ participant.penalty }}</span></td>{% else %}<td><span class="rank-score">{{ participant.score }}</span></td>{% endif %}
+              {% for cell in participant.problems %}
+              <td class="problem-col {{ cell.className }}"{% if cell.hover %} data-tooltip="{{ cell.hover }}"{% endif %}>
+                {% if canView and cell.rid %}<a class="problem-cell-content" href="{{ url('record_detail', rid=cell.rid) }}">{% else %}<div class="problem-cell-content">{% endif %}
+                  {% if ratingBoard.acm %}<span class="{{ 'frozen-symbol' if cell.className == 'cell-problem-frozen' else 'main-symbol' }}">{{ cell.symbol }}</span><span class="sub-info">{{ cell.info }}</span>
+                  {% elif cell.className == 'cell-problem-frozen' %}<span class="frozen-symbol">? {{ cell.pending }}</span><span class="sub-info">{{ cell.value }}</span>
+                  {% else %}<span class="problem-score">{{ cell.value }}</span>{% endif %}
+                {% if canView and cell.rid %}</a>{% else %}</div>{% endif %}
+                {% if cell.practice %}<span class="rating-board-practice" data-tooltip="Post-contest practice score">/{% if canView and cell.practice.raw %}<a href="{{ url('record_detail', rid=cell.practice.raw) }}">{% endif %}{{ cell.practice.value }}{% if canView and cell.practice.raw %}</a>{% endif %}</span>{% endif %}
+              </td>
+              {% endfor %}
+            </tr>
+            {% else %}<tr><td colspan="{{ ratingBoard.prefixColumns + ratingBoard.problems.length }}" class="rating-board-empty">No participants</td></tr>{% endfor %}
+          </tbody>
+          <tfoot>
+            {% for summary in ratingBoard.summaries %}
+            {% set summaryClass = 'summary-bg-dark' if loop.index0 % 2 == 0 else 'summary-bg-light' %}
+            <tr><td colspan="3" class="summary-empty-cell"></td><td colspan="{{ ratingBoard.prefixColumns - 3 }}" class="summary-label-cell {{ summaryClass }}">{{ summary.label }}</td>{% for value in summary.values %}<td class="{{ summaryClass }}">{{ value.value }}{% if value.percentage %}<span class="summary-percentage">{{ value.percentage }}</span>{% endif %}</td>{% endfor %}</tr>
+            {% endfor %}
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}

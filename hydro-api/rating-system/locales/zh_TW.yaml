@@ -1,0 +1,13 @@
+__langname: 繁體中文
+'The ranking page is not updated realtime.': 排行榜頁面不會即時更新。
+'This contest is not ended.': 比賽尚未結束，暫時無法使用此功能。
+
+"Problem Rating": "题目 Rating"
+"Awaiting rating": "待评级"
+"All problem ratings": "全部评级"
+"Provisional": "暂定"
+"Calculated automatically from site Rating and independent solving results.": "根据本站 Rating 和独立做题结果自动计算。"
+"Estimated from independent solving results and historical site Rating.": "根据独立做题结果和本站历史 Rating 评估。"
+"Provisional rating: fewer than 20 independent users.": "暂定评级：独立用户少于 20 人。"
+"At least 5 independent users are needed to estimate difficulty.": "至少需要 5 位独立用户的做题数据。"
+"Hint::icon::difficulty": "题目 Rating 根据本站选手实力和独立做题结果自动评估，100 分一档；样本不足时显示待评级。"

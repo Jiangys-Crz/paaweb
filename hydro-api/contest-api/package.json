@@ -1,0 +1,11 @@
+{
+  "name": "contest-api",
+  "version": "1.0.0",
+  "description": "API for contest submissions and problems",
+  "main": "index.ts",
+  "license": "MIT",
+  "private": true,
+  "peerDependencies": {
+    "hydrooj": "*"
+  }
+}

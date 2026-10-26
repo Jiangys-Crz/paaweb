@@ -1,0 +1,30 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+<ul class="group-list" data-widget-cf-container>
+  {% set _categories = handler.ctx.setting.get('problem.categories')|parseYaml %}
+  {%- for category, sub_categories in _categories -%}
+    <li class="group-list__item">
+      <h2 class="section__title">
+        <a href="{{ url('problem_main', query={q:'category:'+category}) }}">{{ category }}</a>
+      </h2>
+      {% if sub_categories | length > 0 %}
+        <ol class="chip-list">
+          {%- for sub_category in sub_categories -%}
+            <li class="chip-list__item">
+              <a class="typo-a" href="{{ url('problem_main', query={q:'category:'+sub_category}) }}">{{ sub_category }}</a>
+            </li>
+          {%- endfor -%}
+        </ol>
+      {% endif %}
+    </li>
+  {%- endfor -%}
+</ul>
+{% if page_name == 'problem_main' %}
+<div class="rating-problem-filter">
+  <label for="rating-problem-difficulty">{{ _('Problem Rating') }}</label>
+  <select id="rating-problem-difficulty" class="select" data-problem-rating-filter>
+    <option value="">{{ _('All problem ratings') }}</option>
+    <option value="0"{% if model.problem.selectedRating(qs) == '0' %} selected{% endif %}>{{ _('Awaiting rating') }}</option>
+    {% for rating in range(800, 3501, 100) %}<option value="{{ rating }}"{% if model.problem.selectedRating(qs) == rating|string %} selected{% endif %}>{{ rating }}</option>{% endfor %}
+  </select>
+</div>
+{% endif %}

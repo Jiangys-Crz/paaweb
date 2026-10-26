@@ -1,0 +1,10 @@
+{
+  "name": "disable-scoreboard",
+  "version": "1.0.0",
+  "description": "Disable contest scoreboard for non-superadmin",
+  "main": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "hydrooj": "*"
+  }
+}

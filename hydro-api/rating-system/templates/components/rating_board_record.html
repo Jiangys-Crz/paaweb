@@ -1,0 +1,23 @@
+{% import 'components/rating_board_icons.html' as icons %}
+{% macro verdict(status) %}
+  {% set color = '#6b7280' %}{% set text = 'Pending' %}{% set icon = 'sync' %}{% set spin = false %}
+  {% if status == STATUS.STATUS_ACCEPTED %}{% set color = '#16a34a' %}{% set text = 'Accepted' %}{% set icon = 'check' %}
+  {% elif status == STATUS.STATUS_WRONG_ANSWER %}{% set color = '#dc2626' %}{% set text = 'Wrong Answer' %}{% set icon = 'close' %}
+  {% elif status == STATUS.STATUS_TIME_LIMIT_EXCEEDED %}{% set color = '#ea580c' %}{% set text = 'Time Limit Exceeded' %}{% set icon = 'clock' %}
+  {% elif status == STATUS.STATUS_MEMORY_LIMIT_EXCEEDED %}{% set color = '#ea580c' %}{% set text = 'Memory Limit Exceeded' %}{% set icon = 'exclamation' %}
+  {% elif status == STATUS.STATUS_OUTPUT_LIMIT_EXCEEDED %}{% set color = '#ea580c' %}{% set text = 'Output Limit Exceeded' %}{% set icon = 'exclamation' %}
+  {% elif status == STATUS.STATUS_RUNTIME_ERROR %}{% set color = '#9333ea' %}{% set text = 'Runtime Error' %}{% set icon = 'exclamation' %}
+  {% elif status == STATUS.STATUS_COMPILE_ERROR %}{% set color = '#ca8a04' %}{% set text = 'Compile Error' %}{% set icon = 'exclamation' %}
+  {% elif status == STATUS.STATUS_FORMAT_ERROR %}{% set color = '#f97316' %}{% set text = 'Presentation Error' %}{% set icon = 'exclamation' %}
+  {% elif status == STATUS.STATUS_SYSTEM_ERROR or status == STATUS.STATUS_ETC %}{% set color = '#111827' %}{% set text = 'System Error' %}{% set icon = 'exclamation' %}
+  {% elif status == STATUS.STATUS_CANCELED %}{% set text = 'Cancelled' %}{% set icon = 'close' %}
+  {% elif status == STATUS.STATUS_IGNORED %}{% set text = 'Ignored' %}{% set icon = 'exclamation' %}
+  {% elif status == STATUS.STATUS_HACKED %}{% set color = '#dc2626' %}{% set text = 'Hacked' %}{% set icon = 'close' %}
+  {% elif status == STATUS.STATUS_HACK_SUCCESSFUL %}{% set color = '#16a34a' %}{% set text = 'Hack Successful' %}{% set icon = 'check' %}
+  {% elif status == STATUS.STATUS_HACK_UNSUCCESSFUL %}{% set color = '#dc2626' %}{% set text = 'Hack Unsuccessful' %}{% set icon = 'close' %}
+  {% elif status == STATUS.STATUS_FETCHED %}{% set color = '#2563eb' %}{% set text = 'Fetched' %}{% set spin = true %}
+  {% elif status == STATUS.STATUS_JUDGING %}{% set color = '#2563eb' %}{% set text = 'Judging' %}{% set spin = true %}
+  {% elif status == STATUS.STATUS_COMPILING %}{% set color = '#2563eb' %}{% set text = 'Compiling' %}{% set spin = true %}
+  {% else %}{% set spin = true %}{% endif %}
+  <span class="board-submission-verdict{% if spin %} is-pending{% endif %}" style="color:{{ color }}">{{ icons.render(icon, spin) }}{{ text }}</span>
+{% endmacro %}

@@ -1,0 +1,99 @@
+{% set _loginType = loginType or handler.request.body.loginType or 'password' %}
+{% set _account = account or handler.request.body.uname or '' %}
+{% set _email = email or handler.request.body.email or '' %}
+{% set _rememberme = rememberme or handler.request.body.rememberme or false %}
+{% set _redirect = redirect or handler.request.query.redirect or handler.request.body.redirect or '' %}
+{% set _inverse = 'inverse ' if paa_inverse else '' %}
+<style>
+  .paa-login-note {
+    margin: 8px 0 22px;
+    text-align: center;
+    line-height: 1.5;
+  }
+  .paa-login-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .paa-login-tabs .button {
+    margin: 0;
+    padding-left: 8px;
+    padding-right: 8px;
+    text-align: center;
+  }
+  .paa-register-tip {
+    margin-top: 14px;
+    line-height: 1.55;
+  }
+</style>
+<form action="{{ url('user_login') }}" method="post" class="paa-login-form" data-current-mode="{{ _loginType }}">
+  <div class="{{ 'inverse ' if paa_inverse else '' }}supplementary paa-login-note">
+    使用主站账号登录
+  </div>
+  {% if loginError %}
+  <div class="row"><div class="columns">
+    <blockquote class="error">{{ loginError }}</blockquote>
+  </div></div>
+  {% endif %}
+  <input type="hidden" name="loginType" value="{{ _loginType }}">
+  <input type="hidden" name="redirect" value="{{ _redirect }}">
+  <div class="row"><div class="columns">
+    <div class="paa-login-tabs">
+      <a href="javascript:;" class="{{ _inverse }}{{ 'primary ' if _loginType != 'code' else '' }}rounded button" data-login-mode="password">账号密码</a>
+      <a href="javascript:;" class="{{ _inverse }}{{ 'primary ' if _loginType == 'code' else '' }}rounded button" data-login-mode="code">邮箱验证</a>
+    </div>
+  </div></div>
+  <div data-login-panel="password" style="{{ 'display:none' if _loginType == 'code' else '' }}">
+    <div class="row"><div class="columns">
+      <label class="{{ _inverse }}material textbox">
+        账号
+        <input name="uname" type="text" value="{{ _account }}" placeholder="请输入用户名或邮箱" data-autofocus autocomplete="username webauthn">
+      </label>
+    </div></div>
+    <div class="row"><div class="columns">
+      <label class="{{ _inverse }}material textbox">
+        密码
+        <input name="password" type="password" placeholder="请输入密码" autocomplete="current-password">
+      </label>
+    </div></div>
+  </div>
+  <div data-login-panel="code" style="{{ 'display:none' if _loginType != 'code' else '' }}">
+    <div class="row"><div class="columns">
+      <label class="{{ _inverse }}material textbox">
+        邮箱地址
+        <input name="email" type="text" value="{{ _email }}" autocomplete="email">
+      </label>
+    </div></div>
+    <div class="row"><div class="columns">
+      <label class="{{ _inverse }}material textbox">
+        邮箱验证码
+        <input name="code" type="text" inputmode="numeric" autocomplete="one-time-code">
+      </label>
+    </div></div>
+    <div class="row"><div class="columns">
+      <label class="{{ _inverse }}checkbox" {% if paa_inverse %}style="color:#fff;"{% endif %}>
+        <input type="checkbox" name="rememberme" class="checkbox" {% if _rememberme %}checked{% endif %}>记住我
+      </label>
+    </div></div>
+    <div class="row"><div class="columns">
+      <button type="button" class="{{ _inverse }}expanded rounded button paa-send-code">发送验证码</button>
+    </div></div>
+  </div>
+  <div class="row" data-login-panel="password" style="{{ 'display:none' if _loginType == 'code' else '' }}"><div class="columns">
+    <label class="{{ _inverse }}checkbox" {% if paa_inverse %}style="color:#fff;"{% endif %}>
+      <input type="checkbox" name="rememberme" class="checkbox" {% if _rememberme %}checked{% endif %}>记住我
+    </label>
+  </div></div>
+  <div class="row"><div class="columns">
+    <input type="hidden" name="tfa" value="">
+    <input type="hidden" name="authnChallenge" value="">
+    <button type="button" name="login_submit" class="{{ _inverse }}expanded rounded primary button paa-login-submit">{{ _('Login') }}</button>
+  </div></div>
+  <div class="row"><div class="columns">
+    <div class="{{ 'inverse ' if paa_inverse else '' }}supplementary text-center paa-register-tip">
+      还没有账号？
+      请前往主站注册账号
+    </div>
+  </div></div>
+</form>

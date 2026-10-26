@@ -1,0 +1,126 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+{% extends "layout/basic.html" %}
+{% import "components/contest.html" as contest with context %}
+{% import "components/user.html" as user with context %}
+{% block content %}
+{{ set(UiContext, 'tdoc', tdoc) }}
+{{ set(UiContext, 'tsdoc', tsdoc) }}
+<div class="row rating-contest-page">
+  {% set activeContestTab = 'detail' %}
+  {% set showRatingRegistration = true %}
+  {% include "partials/contest_header.html" %}
+
+  <section class="section">
+    <div class="section__body typo richmedia">
+      {{ tdoc.content|markdown|safe }}
+      {% if model.contest.isOngoing(tdoc, tsdoc) %}
+        <blockquote class="warn"><p>{{ _('We will check code similarity after this contest.') }}</p></blockquote>
+      {% endif %}
+      {% if tdoc.duration %}
+        <blockquote class="note"><p>{{ _('The contest is a flexible time contest. You need to complete the contest within a specified time after you attended.') }}</p></blockquote>
+      {% endif %}
+    </div>
+  </section>
+
+  {% if files.length %}
+    <section class="section">
+      <div class="section__header"><h1 class="section__title">{{ _('Files') }}</h1></div>
+      {% set filetype = 'private' %}
+      {% include "partials/files.html" %}
+    </section>
+  {% endif %}
+</div>
+
+{% if ratingContestUi and not tsdoc.attend and not model.contest.isDone(tdoc) %}
+<div class="rating-page-dialog" id="rating-attend-dialog" aria-hidden="true">
+  <div class="rating-page-dialog__backdrop" data-rating-close></div>
+  <div class="rating-page-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="rating-attend-title">
+    <form action="{{ url('contest_detail', tid=tdoc.docId) }}" method="POST" data-rating-registration-form>
+      <input type="hidden" name="operation" value="attend">
+      <input type="hidden" name="ratingAction" value="attend">
+      <header><h2 id="rating-attend-title">{{ '参赛方式' if ratingContestUi.isRated else '确认报名？' }}</h2></header>
+      <div class="rating-page-dialog__body">
+        {% if ratingContestUi.isRated %}
+          <p class="rating-current-score">当前 Rating：<strong>{{ ratingContestUi.currentRating }}</strong></p>
+          <div class="rating-participation-options">
+            <label class="rating-participation-option{% if not ratingContestUi.formalEligible %} is-disabled{% endif %}">
+              <input type="radio" name="ratingParticipation" value="true"
+                {% if ratingContestUi.formalEligible %}checked{% else %}disabled{% endif %}>
+              <span><strong>正式参赛</strong><small>计入 Rating</small></span>
+            </label>
+            <label class="rating-participation-option">
+              <input type="radio" name="ratingParticipation" value="false"
+                {% if not ratingContestUi.formalEligible %}checked{% endif %}>
+              <span><strong>打星参赛</strong><small>不计 Rating</small></span>
+            </label>
+          </div>
+          {% if not ratingContestUi.formalEligible %}<p class="rating-eligibility-warning">当前 Rating 不符合正式资格</p>{% endif %}
+        {% else %}
+          <p>确认报名参加本场比赛？</p>
+        {% endif %}
+        {% if ratingContestUi.invitationRequired %}
+          <label class="rating-invitation-code">比赛邀请码<input type="text" name="code" required autocomplete="off"></label>
+        {% endif %}
+      </div>
+      <footer>
+        <button type="button" class="button" data-rating-close>取消报名</button>
+        <button type="submit" class="primary button">确认报名</button>
+      </footer>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+{% if ratingContestUi and tsdoc.attend and ratingContestUi.canChangeRegistration %}
+{% if ratingContestUi.isRated %}
+<div class="rating-page-dialog" id="rating-modify-dialog" aria-hidden="true">
+  <div class="rating-page-dialog__backdrop" data-rating-close></div>
+  <div class="rating-page-dialog__panel" role="dialog" aria-modal="true" aria-labelledby="rating-modify-title">
+    <form action="{{ url('contest_detail', tid=tdoc.docId) }}" method="POST" data-rating-registration-form>
+      <input type="hidden" name="operation" value="attend">
+      <input type="hidden" name="ratingAction" value="update">
+      <header><h2 id="rating-modify-title">修改参赛身份</h2></header>
+      <div class="rating-page-dialog__body">
+        <p class="rating-current-score">当前 Rating：<strong>{{ ratingContestUi.currentRating }}</strong></p>
+        <p class="rating-current-score">当前报名：<strong>{{ '打星' if tsdoc.unrank else '正式' }}</strong></p>
+        <div class="rating-participation-options">
+          <label class="rating-participation-option{% if not ratingContestUi.formalEligible %} is-disabled{% endif %}">
+            <input type="radio" name="ratingParticipation" value="true"
+              {% if ratingContestUi.formalEligible and not tsdoc.unrank %}checked{% endif %}
+              {% if not ratingContestUi.formalEligible %}disabled{% endif %}>
+            <span><strong>正式参赛</strong><small>计入 Rating</small></span>
+          </label>
+          <label class="rating-participation-option">
+            <input type="radio" name="ratingParticipation" value="false"
+              {% if tsdoc.unrank or not ratingContestUi.formalEligible %}checked{% endif %}>
+            <span><strong>打星参赛</strong><small>不计 Rating</small></span>
+          </label>
+        </div>
+        {% if not ratingContestUi.formalEligible %}<p class="rating-eligibility-warning">当前 Rating 不符合正式资格</p>{% endif %}
+      </div>
+      <footer>
+        <button type="button" class="button" data-rating-close>取消修改</button>
+        <button type="submit" class="primary button">确认修改</button>
+      </footer>
+    </form>
+  </div>
+</div>
+{% endif %}
+
+<div class="rating-page-dialog" id="rating-cancel-dialog" aria-hidden="true">
+  <div class="rating-page-dialog__backdrop" data-rating-close></div>
+  <div class="rating-page-dialog__panel rating-page-dialog__panel--small" role="dialog" aria-modal="true" aria-labelledby="rating-cancel-title">
+    <form action="{{ url('contest_detail', tid=tdoc.docId) }}" method="POST" data-rating-registration-form>
+      <input type="hidden" name="operation" value="attend">
+      <input type="hidden" name="ratingAction" value="cancel">
+      <header><h2 id="rating-cancel-title">确认取消报名？</h2></header>
+      <div class="rating-page-dialog__body"><p>取消后，开赛前仍可重新报名。</p></div>
+      <footer>
+        <button type="button" class="button" data-rating-close>取消</button>
+        <button type="submit" class="alert button">确认取消报名</button>
+      </footer>
+    </form>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,39 @@
+# Example: set the project path and public domain before importing into your Caddyfile.
+(paaweb_site) {
+    encode zstd gzip
+    root * /srv/paaweb/maintenance
+
+    @maintenance file {
+        try_files maintenance.on
+    }
+    handle @maintenance {
+        header Cache-Control "no-store, must-revalidate"
+        rewrite * /index.html
+        file_server
+    }
+
+    handle {
+        reverse_proxy http://127.0.0.1:3403 {
+            @down status 502 503 504
+            handle_response @down {
+                header Cache-Control "no-store, must-revalidate"
+                rewrite * /index.html
+                file_server
+            }
+        }
+    }
+
+    handle_errors {
+        encode zstd gzip
+        @down expression {err.status_code} in [502, 503, 504]
+        handle @down {
+            header Cache-Control "no-store, must-revalidate"
+            rewrite * /index.html
+            file_server
+        }
+    }
+}
+
+example.com {
+    import paaweb_site
+}

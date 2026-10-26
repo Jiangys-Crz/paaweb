@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#0b1220">
+<title>网站维护中 · PAA Web</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%231677ff'/%3E%3Cpath d='M22 70 L40 34 L52 58 L62 42 L78 70 Z' fill='%23ffffff'/%3E%3C/svg%3E">
+<!--
+  网站维护页（自包含单文件）
+  - LOGO 已内联为 base64，页面不依赖任何外部资源，因此 Caddy 可以把任意子路由
+    都重写到本文件（rewrite * /index.html），不会出现图片 404。
+  - 需要修改通知文案时：改 index.template.html 正文，然后运行 ./build.sh 重新生成 index.html。
+  - 直接改 index.html 也可以，但下次 build.sh 会覆盖。
+-->
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  :root {
+    --brand: #1677ff;
+    --brand-2: #13c2c2;
+    --ink: #17212b;
+    --text: #e8f0ff;
+    --text-dim: #9fb3cd;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    margin: 0;
+    min-height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: clamp(20px, 5vw, 56px) clamp(16px, 5vw, 32px);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
+                 "Microsoft YaHei", "Source Han Sans SC", "Noto Sans CJK SC", "Segoe UI", Roboto,
+                 Helvetica, Arial, sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    background:
+      radial-gradient(900px 520px at 12% -10%, rgba(22, 119, 255, .40), transparent 62%),
+      radial-gradient(760px 480px at 92% 8%, rgba(19, 194, 194, .30), transparent 60%),
+      radial-gradient(700px 620px at 50% 118%, rgba(22, 119, 255, .22), transparent 66%),
+      linear-gradient(160deg, #0b1220 0%, #101a2b 46%, #0a1522 100%);
+    background-attachment: fixed;
+  }
+
+  .page {
+    width: 100%;
+    max-width: 640px;
+    text-align: center;
+  }
+
+  .card {
+    padding: clamp(30px, 6vw, 52px) clamp(22px, 5vw, 48px);
+    border: 1px solid rgba(255, 255, 255, .13);
+    border-radius: 24px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, .10) 0%, rgba(255, 255, 255, .04) 100%);
+    box-shadow: 0 28px 80px rgba(3, 10, 22, .55), inset 0 1px 0 rgba(255, 255, 255, .10);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  /* LOGO 居中：外层白底圆形托盘，内层为网站 LOGO */
+  .logo-plate {
+    width: clamp(148px, 40vw, 200px);
+    height: clamp(148px, 40vw, 200px);
+    margin: 0 auto clamp(20px, 4vw, 30px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #ffffff;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .55), 0 18px 44px rgba(4, 14, 30, .45),
+                0 0 0 12px rgba(255, 255, 255, .05);
+    animation: float 4.5s ease-in-out infinite;
+  }
+
+  .logo-plate img {
+    width: 84%;
+    height: 84%;
+    object-fit: contain;
+    display: block;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-7px); }
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 14px;
+    padding: 5px 14px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .07);
+    color: var(--text-dim);
+    font-size: 13px;
+    letter-spacing: .08em;
+  }
+
+  .badge .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ffd666;
+    box-shadow: 0 0 0 0 rgba(255, 214, 102, .7);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    70%  { box-shadow: 0 0 0 9px rgba(255, 214, 102, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 214, 102, 0); }
+  }
+
+  h1 {
+    margin: 0 0 14px;
+    font-size: clamp(24px, 6vw, 32px);
+    font-weight: 700;
+    letter-spacing: .02em;
+    background: linear-gradient(100deg, #ffffff 0%, #cfe4ff 42%, #9fe9e6 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .org {
+    margin: 0 0 18px;
+    color: #cfe0f7;
+    font-size: clamp(14px, 3.6vw, 16px);
+    font-weight: 600;
+  }
+
+  .lead {
+    margin: 0 0 10px;
+    color: var(--text);
+    font-size: clamp(15px, 4vw, 17px);
+  }
+
+  .note {
+    margin: 0;
+    color: var(--text-dim);
+    font-size: clamp(13px, 3.6vw, 15px);
+  }
+
+  .divider {
+    height: 1px;
+    margin: clamp(22px, 4vw, 30px) auto clamp(18px, 3.5vw, 24px);
+    max-width: 260px;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .22), transparent);
+  }
+
+  .btn {
+    appearance: none;
+    cursor: pointer;
+    padding: 11px 30px;
+    border: 0;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 600;
+    font-family: inherit;
+    background: linear-gradient(135deg, var(--brand) 0%, var(--brand-2) 100%);
+    box-shadow: 0 12px 30px rgba(22, 119, 255, .34);
+    transition: transform .18s ease, box-shadow .18s ease, filter .18s ease;
+  }
+
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 16px 36px rgba(22, 119, 255, .42); filter: brightness(1.05); }
+  .btn:active { transform: translateY(0); box-shadow: 0 8px 20px rgba(22, 119, 255, .30); }
+  .btn:focus-visible { outline: 3px solid rgba(255, 255, 255, .75); outline-offset: 3px; }
+
+  .contact {
+    margin: 18px 0 0;
+    color: var(--text-dim);
+    font-size: clamp(13px, 3.4vw, 14px);
+  }
+
+  .contact a { color: #8fd0ff; text-decoration: none; border-bottom: 1px solid rgba(143, 208, 255, .45); }
+  .contact a:hover { color: #bfe6ff; }
+
+  .footer {
+    margin: clamp(20px, 4vw, 28px) 0 0;
+    color: rgba(159, 179, 205, .78);
+    font-size: 12.5px;
+    letter-spacing: .03em;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .logo-plate, .badge .dot { animation: none; }
+    .btn { transition: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <main class="card">
+      <div class="logo-plate">
+        <img src="{{LOGO_DATA_URI}}" alt="PAA Web LOGO" width="168" height="168" decoding="async">
+      </div>
+
+      <p class="badge"><span class="dot" aria-hidden="true"></span>MAINTENANCE</p>
+
+      <h1>网站维护中</h1>
+      <p class="org">PAA Web</p>
+
+      <p class="lead">官网正在进行系统维护升级，服务已暂时停止，敬请谅解。</p>
+      <p class="note">
+        维护期间，报名、证书查询、会员中心、新闻公告等功能暂时无法访问。<br>
+        维护完成后网站会立即恢复，请稍后刷新本页重试。
+      </p>
+
+      <div class="divider" role="presentation"></div>
+
+      <button class="btn" type="button" onclick="window.location.reload()">刷新页面</button>
+
+      <p class="contact">紧急事项请联系站点管理员。</p>
+    </main>
+
+    <p class="footer">© <span id="year">2026</span> PAA Web</p>
+  </div>
+
+  <script>
+    document.getElementById('year').textContent = String(new Date().getFullYear());
+  </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+  "name": "rating-system",
+  "version": "1.6.26",
+  "description": "CF-like Rating v1.4 for HydroOJ",
+  "main": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "hydrooj": "*"
+  },
+  "license": "AGPL-3.0-only"
+}

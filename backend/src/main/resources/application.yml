@@ -1,0 +1,74 @@
+server:
+  port: 8080
+  tomcat:
+    threads:
+      max: 240
+      min-spare: 20
+    max-connections: 1000
+    accept-count: 500
+    connection-timeout: 10s
+  servlet:
+    session:
+      timeout: 30d
+      cookie:
+        max-age: 2592000
+        path: /
+        http-only: true
+        same-site: lax
+
+spring:
+  application:
+    name: paaweb-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/paaweb}
+    username: ${SPRING_DATASOURCE_USERNAME:paaweb}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+      connection-timeout: 3000
+      validation-timeout: 1000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    open-in-view: false
+  mail:
+    host: ${SPRING_MAIL_HOST:}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    protocol: ${SPRING_MAIL_PROTOCOL:smtp}
+    default-encoding: UTF-8
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: ${SPRING_MAIL_SSL_ENABLED:false}
+            required: ${SPRING_MAIL_SSL_ENABLED:false}
+          starttls:
+            enable: ${SPRING_MAIL_STARTTLS_ENABLED:true}
+          # 批量发送是逐封建连的长任务：必须设置超时，否则某一封卡死会让整批一直挂住。
+          connectiontimeout: 15000
+          timeout: 60000
+          writetimeout: 60000
+        debug: false
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 21MB
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+file:
+  upload:
+    path: ${FILE_UPLOAD_PATH:/tmp/uploads/}
+
+crawler:
+  service:
+    url: ${CRAWLER_SERVICE_URL:http://localhost:8000}

@@ -1,0 +1,63 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+{% extends "layout/basic.html" %}
+{% import "components/paginator.html" as paginator with context %}
+{% import "components/nothing.html" as nothing with context %}
+{% block content %}
+<div class="row">
+  <div class="medium-12 columns">
+    <div class="section">
+      <div class="section__body no-padding">
+        <div data-fragment-id="ranking">
+          {% set ratedUdocs = udocs|selectattr('rating', 'gt', 0)|list %}
+          {% if not ratedUdocs.length %}
+            {% if page == 1 %}
+              <blockquote class="note">排行榜页面不会实时更新。</blockquote>
+            {% endif %}
+          {{ nothing.render('暂无排名') }}
+          {% else %}
+          <table class="data-table rating-ranking">
+            <colgroup>
+              <col class="col--rank">
+              <col class="col--user">
+              <col class="col--rating">
+              <col class="col--max-rating">
+              <col class="col--bio">
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="col--rank">{{ _('Rank') }}</th>
+                <th class="col--user">{{ _('Username') }}</th>
+                <th class="col--rating">{{ _('Rating') }}</th>
+                <th class="col--max-rating">{{ _('最高 Rating') }}</th>
+                <th class="col--bio">{{ _('Bio') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) and handler.user.rating|default(0) > 0 %}
+              <tr>
+                <td class="col--rank">{{ ratingCurrentRank|default('-') }}</td>
+                <td class="col--user">{{ user.render_inline(handler.user, levelbadge=true) }}</td>
+                <td class="col--rating">{{ handler.user.rating|default(0) }}</td>
+                <td class="col--max-rating">{{ handler.user.maxRating|default(0) }}</td>
+                <td class="col--bio">{{ handler.user.bio|default('')|truncate(96, true)|markdownInline|safe }}</td>
+              </tr>
+              {% endif %}
+              {%- for udoc in ratedUdocs -%}
+              <tr>
+                <td class="col--rank">{{ (page - 1) * model.system.get('pagination.ranking') + loop.index }}</td>
+                <td class="col--user">{{ user.render_inline(udoc, levelbadge=true) }}</td>
+                <td class="col--rating">{{ udoc.rating|default(0) }}</td>
+                <td class="col--max-rating">{{ udoc.maxRating|default(0) }}</td>
+                <td class="col--bio">{{ udoc.bio|default('')|truncate(96, true)|markdownInline|safe }}</td>
+              </tr>
+              {%- endfor -%}
+            </tbody>
+          </table>
+          {{ paginator.render(page, upcount) }}
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

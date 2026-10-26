@@ -1,0 +1,199 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+{% extends "layout/basic.html" %}
+{% block content %}
+{{ set(
+  UiContext, 'socketUrl',
+  "record-conn?domainId=" + handler.args.domainId
+  + (("&tid=" + filterTid) if filterTid else "")
+  + (("&uidOrName=" + filterUidOrName) if filterUidOrName else "")
+  + (("&pid=" + filterPid) if filterPid else "")
+  + ("&all=1" if all else "")
+  + ("&allDomain=1" if allDomain else "")
+  + ("&ratingBoard=1" if tdoc and tdoc.rule != 'homework' else "")
+  + (("&status=" + filterStatus) if typeof(filterStatus) == 'number' else "")
+) }}
+{{ set(UiContext, 'rids', rdocs.map(eval("rdoc=>rdoc._id.toString()"))) }}
+{% set ratingContestPage = tdoc and tdoc.rule != 'homework' %}
+{% set selfSubmissionView = ratingContestPage and (filterUidOrName == handler.user._id or filterUidOrName == handler.user.uname) %}
+{% if ratingContestPage %}
+  {{ set(UiContext, 'tdoc', tdoc) }}
+  {{ set(UiContext, 'tsdoc', tsdoc) }}
+{% endif %}
+<div class="row{% if ratingContestPage %} rating-contest-page{% endif %}">
+  {% if ratingContestPage %}
+    {% set activeContestTab = 'submissions' %}
+    {% set showRatingRegistration = false %}
+    {% include "partials/contest_header.html" %}
+  {% endif %}
+  <div class="medium-12 columns">
+    {% if ratingContestPage %}<div class="section rating-submissions-card rating-external-board">{% endif %}
+    <form method="get"{% if ratingContestPage %} class="rating-submission-filter" data-rating-record-filter data-record-url="{{ url('record_main') }}" data-record-socket="{{ ratingRecordsSocketUrl }}" data-record-page="{{ page }}" data-record-limit="{{ ratingRecordsLimit }}"{% endif %}>
+      {% if not ratingContestPage %}<div class="section">{% endif %}
+        {% if ratingContestPage %}
+        <div class="board-submission-filters rating-board-filters">
+          <input type="hidden" name="tid" value="{{ tdoc.docId }}">
+          {% if ratingRecordsSelfUid %}<input type="hidden" name="uidOrName" value="{{ ratingRecordsSelfUid }}">{% endif %}
+          <datalist id="rating-contest-problems">{% for problem in ratingRecordProblems %}<option value="{{ problem.label }}">{{ problem.label }} - {{ problem.title }} ({{ problem.pid or problem.docId }})</option>{% endfor %}</datalist>
+          <div class="rating-board-filter-field rating-board-filter-field--problem">
+            <input name="problemKeyword" type="text" class="textbox" value="{{ ratingRecordProblemKeyword }}" list="rating-contest-problems" placeholder="题号 / ID / 标题" aria-label="Problem" maxlength="200" autocomplete="off">
+          </div>
+          <select class="compact select" name="status" aria-label="Status"><option value="">Status</option>{% for k,v in utils.status.STATUS_TEXTS %}<option value="{{ k }}"{% if filterStatus == k %} selected{% endif %}>{{ v }}</option>{% endfor %}</select>
+          <div class="rating-board-filter-field rating-board-filter-field--user">
+            <input name="userKeyword" type="text" class="textbox" value="{{ ratingRecordUserKeyword }}" placeholder="用户名 / UID" aria-label="Username or UID" autocomplete="off" maxlength="200">
+          </div>
+          <select class="compact select" name="lang" aria-label="Language"><option value="">All Languages</option>{% for key, language in model.setting.langs %}{% if language.display and not language.hidden and not language.disabled and (not tdoc.langs.length or tdoc.langs.includes(key)) and (not handler.domain.langs or handler.domain.langs.split(',').includes(key)) %}<option value="{{ key }}"{% if filterLang == key %} selected{% endif %}>{{ language.display }}</option>{% endif %}{% endfor %}</select>
+          <button type="submit" class="primary button"><span class="icon icon-refresh"></span> Refresh</button>
+          <a href="{{ url('record_main', query={tid:tdoc.docId, uidOrName:filterUidOrName}) if selfSubmissionView else url('record_main', query={tid:tdoc.docId}) }}" class="button" data-rating-record-reset>Reset</a>
+        </div>
+        <p class="rating-record-filter-status" data-rating-record-status role="status" aria-live="polite" hidden></p>
+        {% else %}
+        <div class="section__header{% if ratingContestPage %} rating-submission-filter__header{% endif %}">
+          <h1 class="section__title">{{ _('Filter') }}</h1>
+          <div class="section__tools">
+            <button type="submit" class="primary button"><span class="icon icon-filter"></span> {{ _('Filter') }}</button>
+            <a href="{% if ratingContestPage and filterUidOrName %}{{ url('record_main', query={tid:tdoc.docId, uidOrName:filterUidOrName}) }}{% elif ratingContestPage %}{{ url('record_main', query={tid:tdoc.docId}) }}{% else %}{{ url('record_main') }}{% endif %}" class="button">{{ _('Reset') }}</a>
+          </div>
+        </div>
+        <div class="section__body{% if ratingContestPage %} rating-submission-filter__body{% endif %}">
+          <div class="row">
+            {% if ratingContestPage %}<input type="hidden" name="tid" value="{{ tdoc.docId }}">{% endif %}
+            <div class="medium-{{ 3 if ratingContestPage else 2 }} columns">
+              <label class="filter-user">
+                {{ _('By Username / UID') }}
+                <input name="uidOrName" type="text" class="textbox" value="{{ filterUidOrName }}" autocomplete="off" data-autofocus>
+              </label>
+            </div>
+            <div class="medium-{{ 3 if ratingContestPage else 2 }} columns">
+              <label>
+                {{ _('By Problem') }}
+                <input name="pid" type="text" class="textbox" value="{{ filterPid }}">
+              </label>
+            </div>
+            {% if not ratingContestPage %}
+            <div class="medium-2 columns">
+              <label>
+                {{ _('By Contest') }}
+                <input name="tid" type="text" class="textbox" value="{{ filterTid }}">
+              </label>
+            </div>
+            {% endif %}
+            <div class="medium-3 columns">
+              <label>
+                {{ _('By Language') }}
+              </label>
+              <select class="compact select" name="lang">
+                <option value="">{{ _('All Languages') }}</option>
+              </select>
+            </div>
+            <div class="medium-3 columns">
+              <label>
+                {{ _('By Status') }}
+              </label>
+              <select class="compact select" name="status">
+                <option value="" {% if typeof(filterStatus) != 'number' %}selected{% else %}{% endif %}>{{ _('All Submissions') }}</option>
+                {%- for k,v in utils.status.STATUS_TEXTS -%}
+                <option value="{{k}}" {% if filterStatus == k %}selected{% else %}{% endif %}>{{v}}</option>
+                {%- endfor -%}
+              </select>
+            </div>
+          </div>
+        </div>
+        {% endif %}
+      {% if not ratingContestPage %}</div>{% endif %}
+    </form>
+    {% if not ratingContestPage %}<div class="section">{% endif %}
+      <div class="section__body no-padding{% if ratingContestPage %} rating-submission-list{% endif %}">
+      {% if ratingContestPage %}
+        <div data-rating-record-results>{% include 'partials/rating_record_list.html' %}</div>
+      {% else %}
+      {% if not rdocs.length and not ratingContestPage %}
+        {% if not filterUidOrName and not filterPid and not filterTid %}
+        {{ nothing.render('Oh, there is no task in the queue!') }}
+        {% else %}
+        {{ nothing.render('Oh, there are no tasks that match the filter!') }}
+        {% endif %}
+      {% else %}
+        {% if ratingContestPage %}<div class="rating-board-fit" data-rating-board-fit><div class="rating-board-fit-slot"><div class="rating-board-fit-inner" data-board-width="1180">{% endif %}
+        <table class="data-table record_main__table{% if ratingContestPage %} board-submissions-table{% endif %}">
+          {% if ratingContestPage %}
+          <colgroup>
+            <col class="col--id" style="width:208px"><col class="col--problem" style="width:200px"><col class="col--status" style="width:212px">
+            {% if tdoc.rule != 'acm' %}<col class="col--score" style="width:120px">{% endif %}
+            <col class="col--submit-by" style="width:140px"><col class="col--time" style="width:95px"><col class="col--memory" style="width:110px"><col class="col--submit-at" style="width:184px"><col class="col--details" style="width:132px">
+          </colgroup>
+          <thead><tr><th class="col--id" scope="col">ID</th><th class="col--problem" scope="col">Problem</th><th class="col--status" scope="col">Status</th>{% if tdoc.rule != 'acm' %}<th class="col--score" scope="col">Score</th>{% endif %}<th class="col--submit-by" scope="col">Person</th><th class="col--time" scope="col">Time</th><th class="col--memory" scope="col">Memory</th><th class="col--submit-at" scope="col">Date</th><th class="col--details" scope="col">Details</th></tr></thead>
+          {% else %}
+          <colgroup>
+            <col class="col--status">
+            <col class="col--problem">
+            <col class="col--submit-by">
+            <col class="col--time">
+            <col class="col--memory">
+            <col class="col--lang">
+            <col class="col--submit-at">
+          </colgroup>
+          <thead>
+            <tr>
+              <th class="col--status record-status--border">{{ _('Status') }}</th>
+              <th class="col--problem">{{ _('Problem') }}</th>
+              <th class="col--submit-by">{{ _('Submit By') }}</th>
+              <th class="col--time">{{ _('Time') }}</th>
+              <th class="col--memory">{{ _('Memory') }}</th>
+              <th class="col--lang">{{ _('Language') }}</th>
+              <th class="col--submit-at">{{ _('Submit At') }}</th>
+            </tr>
+          </thead>
+          {% endif %}
+          <tbody>
+          {%- for rdoc in rdocs -%}
+            {% set udoc = udict[rdoc['uid']] %}
+            {% set pdoc = pdict[rdoc['pid']] %}
+            {% include 'record_main_tr.html' %}
+          {% else %}
+            <tr data-rating-board-empty><td colspan="{{ 8 if tdoc.rule == 'acm' else 9 }}">No submissions</td></tr>
+            {# Hydro keeps the initial row count when pushing new records. Reserve empty slots. #}
+            {% for slot in range(1, model.system.get('pagination.record') or 20) %}<tr data-rating-board-empty-slot hidden><td></td></tr>{% endfor %}
+          {%- endfor -%}
+          </tbody>
+        </table>
+        {% if ratingContestPage %}</div></div></div>{% endif %}
+        {% if handler.user.hasPriv(PRIV.PRIV_VIEW_JUDGE_STATISTICS) or filterTid or filterPid or filterUidOrName %}
+        <ul class="pager">
+          <li>
+            <a class="pager__item next link" href="?page={{ page + 1 }}{{
+              (('&tid=' + filterTid) if filterTid else '')
+              + (('&uidOrName=' + filterUidOrName) if filterUidOrName else '')
+              + (('&lang=' + filterLang) if filterLang else '')
+              + (('&status=' + filterStatus) if typeof(filterStatus) == 'number' else '')
+              + (('&pid=' + filterPid) if filterPid else '')
+              + ('&all=1' if all else '')
+              + ('&allDomain=1' if allDomain else '') }}">{{ _('pager_next') }}</a>
+          </li>
+        </ul>
+        {% endif %}
+      {% endif %}
+      {% endif %}
+      </div>
+    {% if not ratingContestPage %}</div>{% endif %}
+    {% if ratingContestPage %}</div>{% endif %}
+    {% if statistics %}
+    <div class="section">
+      <div class="section__header">
+        <h1 class="section__title">{{ _('Statistics') }}</h1>
+      </div>
+      <div class="section__body">
+        <dl class="large horizontal">
+          <dt>{{ _('5 Min')}}</dt><dd>{{ statistics['d5min'] }}</dd>
+          <dt>{{ _('1 Hour')}}</dt><dd>{{ statistics['d1h'] }}</dd>
+          <dt>{{ _('Day') }}</dt><dd>{{ statistics['day'] }}</dd>
+          <dt>{{ _('Week') }}</dt><dd>{{ statistics['week'] }}</dd>
+          <dt>{{ _('Month') }}</dt><dd>{{ statistics['month'] }}</dd>
+          <dt>{{ _('Year') }}</dt><dd>{{ statistics['year'] }}</dd>
+          <dt>{{ _('Total') }}</dt><dd>{{ statistics['total'] }}</dd>
+        </dl>
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

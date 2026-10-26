@@ -1,0 +1,25 @@
+        <div class="rating-board-fit" data-rating-board-fit><div class="rating-board-fit-slot"><div class="rating-board-fit-inner" data-board-width="1180">
+        <table class="data-table record_main__table board-submissions-table">
+          <colgroup>
+            <col class="col--id" style="width:208px"><col class="col--problem" style="width:200px"><col class="col--status" style="width:212px">
+            {% if tdoc.rule != 'acm' %}<col class="col--score" style="width:120px">{% endif %}
+            <col class="col--submit-by" style="width:140px"><col class="col--time" style="width:95px"><col class="col--memory" style="width:110px"><col class="col--submit-at" style="width:184px"><col class="col--details" style="width:132px">
+          </colgroup>
+          <thead><tr><th class="col--id" scope="col">ID</th><th class="col--problem" scope="col">Problem</th><th class="col--status" scope="col">Status</th>{% if tdoc.rule != 'acm' %}<th class="col--score" scope="col">Score</th>{% endif %}<th class="col--submit-by" scope="col">Person</th><th class="col--time" scope="col">Time</th><th class="col--memory" scope="col">Memory</th><th class="col--submit-at" scope="col">Date</th><th class="col--details" scope="col">Details</th></tr></thead>
+
+          <tbody>
+          {%- for rdoc in rdocs -%}
+            {% set udoc = udict[rdoc['uid']] %}
+            {% set pdoc = pdict[rdoc['pid']] %}
+            {% include 'record_main_tr.html' %}
+          {% else %}
+            <tr data-rating-board-empty><td colspan="{{ 8 if tdoc.rule == 'acm' else 9 }}">No submissions</td></tr>
+          {%- endfor -%}
+          </tbody>
+        </table>
+        </div></div></div>
+        <ul class="pager rating-record-pager">
+          {% if ratingRecordsPreviousUrl %}<li><a class="pager__item previous link" href="{{ ratingRecordsPreviousUrl }}" data-rating-record-page="{{ page - 1 }}">{{ _('pager_previous') }}</a></li>{% endif %}
+          <li><span class="pager__item">{{ page }}</span></li>
+          {% if ratingRecordsNextUrl %}<li><a class="pager__item next link" href="{{ ratingRecordsNextUrl }}" data-rating-record-page="{{ page + 1 }}">{{ _('pager_next') }}</a></li>{% endif %}
+        </ul>

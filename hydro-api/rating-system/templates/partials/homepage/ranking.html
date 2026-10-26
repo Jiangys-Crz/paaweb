@@ -1,0 +1,22 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+{% set rankingPayload = ratingVisibleUids if ratingVisibleUids is defined else payload %}
+{% if rankingPayload.length %}
+  <div class="section">
+    <div class="section__header"><h1 class="section__title">{{ _('Ranking') }}</h1></div>
+    <div class="section__body no-padding">
+      <table class="data-table rating-ranking">
+        <colgroup><col class="col--rank"><col class="col--user"><col class="col--rating"><col class="col--max-rating"><col class="col--bio"></colgroup>
+        <thead><tr><th class="col--rank">{{ _('Rank') }}</th><th class="col--user">{{ _('Username') }}</th><th class="col--rating">Rating</th><th class="col--max-rating">{{ _('最高 Rating') }}</th><th class="col--bio">{{ _('Bio') }}</th></tr></thead>
+        <tbody>
+          {%- for uid in rankingPayload -%}
+            {% set udoc = udict[uid] %}
+            {% if udoc.rating|default(0) > 0 %}
+            <tr><td class="col--rank">{{ loop.index }}</td><td class="col--user">{{ user.render_inline(udoc, levelbadge=true) }}</td><td class="col--rating">{{ udoc.rating|default(0) }}</td><td class="col--max-rating">{{ udoc.maxRating|default(0) }}</td><td class="col--bio">{{ udoc.bio|default('')|truncate(96, true)|markdownInline|safe }}</td></tr>
+            {% endif %}
+          {%- endfor -%}
+        </tbody>
+      </table>
+    </div>
+    <ul class="pager pager-bottom"><li><a class="pager__item next link" href="{{ url('ranking') }}">{{ _('More') }} ></a></li></ul>
+  </div>
+{% endif %}

@@ -1,0 +1,17 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+{% if not ratingContestPage and not handler.ratingBoardRecords %}
+  {% include 'partials/rating_native_record_tr.html' %}
+{% else %}
+{% import 'components/rating_board_record.html' as boardRecord with context %}
+<tr data-rid="{{ rdoc._id }}">
+  <td class="col--id"><a class="board-submission-id" href="{{ url('record_detail', rid=rdoc._id) }}">{{ rdoc._id }}</a></td>
+  <td class="col--problem col--problem-name"><a class="board-submission-problem" href="{{ url('problem_detail', pid=pdoc.pid or rdoc.pid, query={tid:tdoc.docId}) }}">{{ utils.getAlphabeticId(tdoc.pids.indexOf(rdoc.pid)) }} - {{ pdoc.title or '*' }}</a>{% if rdoc.files.hack %}<span class="text-orange"> (Hack)</span>{% endif %}</td>
+  <td class="col--status">{{ boardRecord.verdict(rdoc.status) }}{% if rdoc.status == STATUS.STATUS_JUDGING and typeof(rdoc.progress) == 'number' %}<span class="rating-board-judge-progress">{{ rdoc.progress|int }}%</span>{% endif %}</td>
+  {% if tdoc.rule != 'acm' %}<td class="col--score">{% if typeof(rdoc.score) == 'number' %}{{ rdoc.score * (tdoc.score[rdoc.pid] if tdoc.score and typeof(tdoc.score[rdoc.pid]) == 'number' else 100) / 100 }} / {{ tdoc.score[rdoc.pid] if tdoc.score and typeof(tdoc.score[rdoc.pid]) == 'number' else 100 }}{% else %}-{% endif %}</td>{% endif %}
+  <td class="col--submit-by"><a class="board-submission-person" href="{{ url('user_detail', uid=rdoc.uid) }}">{{ udoc.uname }}</a></td>
+  <td class="col--time">{% if typeof(rdoc.time) == 'number' %}{{ rdoc.time|round|int }}ms{% else %}-{% endif %}</td>
+  <td class="col--memory">{% if typeof(rdoc.memory) == 'number' %}{{ size(rdoc.memory, 1024) }}{% else %}-{% endif %}</td>
+  <td class="col--submit-at">{{ datetimeSpan(rdoc._id, false, 'YYYY-MM-DD HH:mm:ss')|safe }}</td>
+  <td class="col--details"><a href="{{ url('record_detail', rid=rdoc._id) }}">View Details</a>{% if handler.user.hasPerm(perm.PERM_REJUDGE) and not rdoc.files.hack %}<form class="form--inline rating-board-record-actions" method="post" action="{{ url('record_detail', rid=rdoc._id, domainId=rdoc.domainId) }}"><button type="submit" name="operation" value="rejudge" class="link">{{ _('Rejudge') }}</button><button type="submit" name="operation" value="cancel" class="link">{{ _('Cancel Score') }}</button></form>{% endif %}</td>
+</tr>
+{% endif %}

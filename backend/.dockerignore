@@ -1,0 +1,14 @@
+target
+.git
+.gitignore
+.idea
+.vscode
+*.iml
+Dockerfile
+pom.xml.releaseBackup
+release.properties
+
+.env*
+*.log
+*.key
+*.pem

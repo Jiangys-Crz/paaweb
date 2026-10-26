@@ -1,0 +1,56 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+{% macro render_inline(udoc, avatar=true, badge=true, modbadge=true, levelbadge=false) %}
+{% if udoc %}
+<span class="user-profile-link">
+  {% if avatar %}
+    <img class="small user-profile-avatar v-center" loading="lazy" src="{{ avatarUrl(udoc.avatar|default('')) }}" width="20" height="20">
+  {% endif %}
+  <a class="user-profile-name" href="{{ url('user_detail', uid=udoc._id) }}" style="{{ udoc.ratingStyle|default('') }}" data-rating="{{ udoc.rating|default(0) }}" data-max-rating="{{ udoc.maxRating|default(0) }}" data-rating-color="{{ udoc.ratingColor|default('#000000') }}">
+    {% if handler.user.hasPerm(perm.PERM_VIEW_USER_PRIVATE_INFO) and udoc.displayName and udoc.displayName != udoc.uname %}
+      {% if udoc.ratingLevel == 'Veteran' or udoc.ratingLevel == 'Legend' or udoc.ratingLevel == 'Supreme' %}<span style="color:{{ udoc.ratingFirstColor }};{% if udoc.ratingBold %}font-weight:700;{% endif %}">{{ udoc.ratingFirst }}</span><span style="color:{{ udoc.ratingRestColor }};{% if udoc.ratingBold %}font-weight:700;{% endif %}">{{ udoc.ratingRest }}</span> (<span style="color:{{ udoc.ratingRestColor }};{% if udoc.ratingBold %}font-weight:700;{% endif %}">{{ udoc.displayName }}</span>)
+      {% else %}<span style="{{ udoc.ratingStyle|default('') }}">{{ udoc.uname }}</span> (<span style="{{ udoc.ratingStyle|default('') }}">{{ udoc.displayName }}</span>){% endif %}
+    {% elif udoc.ratingLevel == 'Veteran' or udoc.ratingLevel == 'Legend' or udoc.ratingLevel == 'Supreme' %}
+      <span style="color:{{ udoc.ratingFirstColor }};{% if udoc.ratingBold %}font-weight:700;{% endif %}">{{ udoc.ratingFirst }}</span><span style="color:{{ udoc.ratingRestColor }};{% if udoc.ratingBold %}font-weight:700;{% endif %}">{{ udoc.ratingRest }}</span>
+    {% else %}
+      {{ udoc.uname }}
+    {% endif %}
+  </a>
+  {% if badge %}
+    {% if udoc.badge %}
+      {% set _badge = udoc.badge.split('#') %}
+      <span class="user-profile-badge v-center" style="background-color:#{{ _badge[1] }}{% if _badge[2] %};color:#{{ _badge[2] }}{% endif %}">{{ _badge[0] }}</span>
+    {% endif %}
+    {% if levelbadge %}
+      <a class="user-profile-badge v-center rating-badge" href="{{ url('user_detail', uid=udoc._id) }}" style="--rating-color:{{ udoc.ratingColor|default('#000000') }};{{ udoc.ratingStyle|default('color:#000000;') }}" data-rating-color="{{ udoc.ratingColor|default('#000000') }}" data-tooltip="{{ udoc.ratingLevel|default('Unrated') }}: Rating {{ udoc.rating|default(0) }}">
+        {% if udoc.ratingLevel == 'Veteran' or udoc.ratingLevel == 'Legend' %}
+          <span style="color:{{ udoc.ratingFirstColor }};font-weight:700">{{ udoc.ratingLevelFirst }}</span><span style="color:{{ udoc.ratingRestColor }};font-weight:700">{{ udoc.ratingLevelRest }}</span>
+        {% elif udoc.ratingLevel == 'Supreme' %}
+          <span style="color:{{ udoc.ratingFirstColor }};font-weight:700">{{ udoc.ratingLevelFirst }}</span><span style="color:{{ udoc.ratingRestColor }};font-weight:700">{{ udoc.ratingLevelRest }}</span>
+        {% else %}
+          {{ udoc.ratingLevel|default('Unrated') }}
+        {% endif %}
+      </a>
+    {% endif %}
+    {% if modbadge %}
+      {% if udoc.hasPriv(PRIV.PRIV_MOD_BADGE) %}
+        <span class="user-profile-badge v-center badge--su" data-tooltip="{{ _('SuperUser') }}">SU</span>
+      {% elif udoc.hasPerm(perm.PERM_MOD_BADGE) %}
+        <span class="user-profile-badge v-center badge--mod" data-tooltip="{{ _('Moderator') }}">MOD</span>
+      {% endif %}
+    {% endif %}
+  {% endif %}
+</span>
+{% else %}
+  <span class="user-profile-link">
+    {% if avatar %}
+      <img class="small user-profile-avatar v-center" src="{{ UiContext.cdn_prefix }}img/avatar.png" width="20" height="20">
+    {% endif %}
+    <a class="user-profile-name" href="#">
+      {{ _('Unknown User') }}
+    </a>
+    {% if badge %}
+      <a class="user-profile-badge v-center rating-badge" href="#" style="--rating-color:#000000;color:#000000" title="Unrated: Rating 0">Unrated</a>
+    {% endif %}
+  </span>
+{% endif %}
+{% endmacro %}

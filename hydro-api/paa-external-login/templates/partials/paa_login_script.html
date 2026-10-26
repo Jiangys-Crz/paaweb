@@ -1,0 +1,106 @@
+<script>
+(function () {
+  function closest(el, selector) {
+    while (el && el.matches && !el.matches(selector)) el = el.parentElement;
+    return el && el.matches && el.matches(selector) ? el : null;
+  }
+
+  function setMode(form, mode) {
+    form.querySelector('[name="loginType"]').value = mode;
+    form.querySelectorAll('[data-login-panel]').forEach(function (panel) {
+      panel.style.display = panel.getAttribute('data-login-panel') === mode ? '' : 'none';
+    });
+    form.querySelectorAll('[name="rememberme"]').forEach(function (input) {
+      var panel = closest(input, '[data-login-panel]');
+      input.disabled = !!panel && panel.getAttribute('data-login-panel') !== mode;
+    });
+    form.querySelectorAll('[data-login-mode]').forEach(function (tab) {
+      if (tab.getAttribute('data-login-mode') === mode) {
+        tab.classList.add('primary');
+        tab.classList.remove('inverse');
+      } else {
+        tab.classList.remove('primary');
+        if (tab.dataset.inverse === '1') tab.classList.add('inverse');
+      }
+    });
+  }
+
+  function initForm(form) {
+    if (form.dataset.paaReady) return;
+    form.dataset.paaReady = '1';
+    form.querySelectorAll('[data-login-mode]').forEach(function (tab) {
+      if (tab.classList.contains('inverse')) tab.dataset.inverse = '1';
+    });
+    setMode(form, form.dataset.currentMode === 'code' ? 'code' : 'password');
+    form.querySelectorAll('[data-login-mode]').forEach(function (tab) {
+      tab.addEventListener('click', function () {
+        setMode(form, tab.getAttribute('data-login-mode'));
+      });
+    });
+    form.addEventListener('submit', function () {
+      var active = form.querySelector('[data-login-mode].primary');
+      setMode(form, active ? active.getAttribute('data-login-mode') : form.querySelector('[name="loginType"]').value);
+    });
+  }
+
+  function init() {
+    document.querySelectorAll('.paa-login-form').forEach(initForm);
+  }
+
+  if (!window.__paaSendCodeBound) {
+    window.__paaSendCodeBound = true;
+    document.addEventListener('click', function (ev) {
+      var submitButton = closest(ev.target, '.paa-login-submit');
+      if (submitButton) {
+        ev.preventDefault();
+        var submitForm = closest(submitButton, '.paa-login-form');
+        if (!submitForm) return;
+        var active = submitForm.querySelector('[data-login-mode].primary');
+        setMode(submitForm, active ? active.getAttribute('data-login-mode') : submitForm.querySelector('[name="loginType"]').value);
+        HTMLFormElement.prototype.submit.call(submitForm);
+        return;
+      }
+
+      var button = closest(ev.target, '.paa-send-code');
+      if (!button) return;
+      ev.preventDefault();
+      var form = closest(button, '.paa-login-form');
+      var input = form && form.querySelector('[name="email"]');
+      var email = input ? input.value.trim() : '';
+      if (!email) {
+        window.alert('请先输入邮箱地址');
+        return;
+      }
+      button.disabled = true;
+      button.textContent = '正在发送...';
+      fetch('/paa/send-code', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'content-type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+        body: new URLSearchParams({ email: email }).toString(),
+      }).then(function (res) {
+        return res.json();
+      }).then(function (data) {
+        if (!data.ok) throw new Error(data.msg || '验证码发送失败');
+        var left = 60;
+        var timer = setInterval(function () {
+          left -= 1;
+          button.textContent = left + ' 秒后重试';
+          if (left <= 0) {
+            clearInterval(timer);
+            button.disabled = false;
+            button.textContent = '发送验证码';
+          }
+        }, 1000);
+      }).catch(function (err) {
+        button.disabled = false;
+        button.textContent = '发送验证码';
+        window.alert(err.message || '验证码发送失败');
+      });
+    });
+  }
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+}());
+</script>

@@ -1,0 +1,33 @@
+services:
+  napcat:
+    image: "${NAPCAT_IMAGE:-mlikiowa/napcat-docker:v4.18.41}"
+    environment:
+      MODE: ws
+      WEBUI_TOKEN: "${NAPCAT_WEBUI_TOKEN:?required}"
+      TZ: Asia/Shanghai
+    ports:
+      - "127.0.0.1:6099:6099"
+    expose:
+      - "3001"
+    volumes:
+      - ./state/qq:/app/.config/QQ
+      - ./state/config:/app/napcat/config
+      - ./state/plugins:/app/napcat/plugins
+    networks:
+      app_network:
+        aliases:
+          - napcat
+    mem_limit: 768m
+    cpus: 0.75
+    shm_size: 128mb
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  app_network:
+    external: true
+    name: "${PAAWEB_NETWORK:-paaweb_app_network}"

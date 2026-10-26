@@ -1,0 +1,14 @@
+{# Modified for PAA Web on 2026-10-26. Based on Hydro ui-default; AGPL-3.0-only. See NOTICE.md. #}
+<div class="dialog dialog--signin" style="display:none">
+  <div class="dialog__content">
+    <div class="dialog--signin__main">
+      <div class="dialog--signin__close-container supplementary">
+        <a name="dialog--signin__close" href="javascript:;">{{ _('CLOSE') }}</a>
+      </div>
+      <h1 class="dialog--signin__title">登录</h1>
+      {% set paa_inverse = false %}
+      {% include "partials/paa_login_form.html" %}
+    </div>
+  </div>
+</div>
+{% include "partials/paa_login_script.html" %}

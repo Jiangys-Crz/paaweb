@@ -1,0 +1,139 @@
+{% import "components/contest.html" as contest with context %}
+{% import "components/user.html" as user with context %}
+{% set contestEnded = model.contest.isDone(tdoc) %}
+{% set contestManager = handler.user.own(tdoc) or (contestEnded and handler.user.hasPerm(perm.PERM_EDIT_CONTEST)) %}
+{% set showContestNav = contestEnded or contestManager or (tsdoc.attend and ratingContestUi and not ratingContestUi.beforeStart) %}
+{% set canViewAllSubmissions = contestManager or (contestEnded and model.contest.canShowRecord.call(handler, tdoc, true)) %}
+{% set canExportCode = contestManager or (contestEnded and (handler.user.hasPriv(PRIV.PRIV_READ_RECORD_CODE) or handler.user.hasPerm(perm.PERM_READ_RECORD_CODE))) %}
+{% set selfSubmissionView = activeContestTab == 'submissions' and (filterUidOrName == handler.user._id or filterUidOrName == handler.user.uname) %}
+
+<section class="section rating-contest-overview">
+  <div class="rating-contest-hero">
+    <div class="section__header rating-contest-hero__header">
+      <h1 class="section__title">{{ tdoc.title }}</h1>
+      <div class="rating-contest-tags" aria-label="比赛属性">
+        <span class="rating-contest-tag {{ 'is-rated' if ratingContestUi and ratingContestUi.isRated else 'is-unrated' }}">
+          {{ 'Rated' if ratingContestUi and ratingContestUi.isRated else 'Unrated' }}
+        </span>
+        <span class="rating-contest-tag is-rule">{{ _(model.contest.RULES[tdoc.rule].TEXT) }}</span>
+        <span class="rating-contest-tag{% if ratingContestUi and ratingContestUi.beforeStart %} is-upcoming{% elif model.contest.isDone(tdoc) %} is-ended{% else %} is-running{% endif %}">
+          {{ _(model.contest.statusText(tdoc, tsdoc)) }}
+        </span>
+      </div>
+    </div>
+    <div class="section__body rating-contest-meta">
+      <div class="rating-contest-meta__row">
+        <div><span>{{ _('Start at') }}</span><strong>{{ contest.render_time(tdoc.beginAt) }}</strong></div>
+        <div><span>{{ _('End at') }}</span><strong>{{ contest.render_time(tdoc.endAt) }}</strong></div>
+        <div><span>{{ _('Duration') }}</span><strong>{{ contest.render_duration(tdoc) }} {{ _('hour(s)') }}</strong></div>
+      </div>
+      <div class="rating-contest-meta__row">
+        <div><span>题目数量</span><strong>{{ tdoc.pids.length }}</strong></div>
+        <div><span>{{ _('Host') }}</span><strong>{{ user.render_inline(ratingContestOwner or udict[tdoc.owner], badge=false) }}</strong></div>
+        <div><span>报名人数</span><strong>{{ tdoc.attend|default(0) }}</strong></div>
+        {% if ratingContestUi and ratingContestUi.isRated %}
+          <div><span>Rating 范围</span><strong>{{ ratingContestUi.ratedMin }} ≤ Rating &lt; {{ ratingContestUi.ratedMax }}</strong></div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {% if showContestNav %}
+  <nav class="rating-contest-nav" aria-label="比赛导航">
+    <div class="rating-contest-nav__links">
+      <a{% if activeContestTab == 'detail' %} class="active"{% endif %} href="{{ url('contest_detail', tid=tdoc.docId) }}">比赛说明</a>
+      {% if contestManager or tsdoc.attend or model.contest.isDone(tdoc) %}
+        <a{% if activeContestTab == 'problems' %} class="active"{% endif %} href="{{ url('contest_problemlist', tid=tdoc.docId) }}">题目列表</a>
+      {% endif %}
+      {% if contestManager or model.contest.canShowScoreboard.call(handler, tdoc, false) %}
+        <a{% if activeContestTab == 'scoreboard' %} class="active"{% endif %} href="{{ url('contest_scoreboard', tid=tdoc.docId) }}">排行榜</a>
+      {% elif contestEnded and model.contest.canViewHiddenScoreboard.call(handler, tdoc) %}
+        <a{% if activeContestTab == 'scoreboard' %} class="active"{% endif %} href="{{ url('contest_scoreboard', tid=tdoc.docId) }}">隐藏排行榜</a>
+      {% endif %}
+      {% if canViewAllSubmissions %}
+        <a{% if activeContestTab == 'submissions' and not selfSubmissionView %} class="active"{% endif %} href="{{ url('record_main', query={tid:tdoc.docId}) }}">所有递交</a>
+      {% endif %}
+      {% if handler.user._id and (tsdoc.attend or contestEnded) and model.contest.canShowSelfRecord.call(handler, tdoc) %}
+        <a{% if selfSubmissionView %} class="active"{% endif %} href="{{ url('record_main', query={tid:tdoc.docId, uidOrName:handler.user._id}) }}">我的递交</a>
+      {% endif %}
+      {% if (contestEnded or handler.user.own(tdoc)) and handler.user.hasPerm(perm.PERM_VIEW_DISCUSSION) %}
+        <a href="{{ url('discussion_node', type='contest', name=tdoc.docId) }}">题解（讨论）</a>
+      {% endif %}
+      <a href="{{ url('wiki_help', anchor='contest') }}">帮助</a>
+      {% if contestManager %}
+        <a href="{{ url('contest_edit', tid=tdoc.docId) }}">编辑比赛</a>
+        <a href="{{ url('contest_manage', tid=tdoc.docId) }}">比赛管理</a>
+      {% endif %}
+      {% if tdoc.allowPrint and (tsdoc.attend or contestManager) %}
+        <a href="{{ url('contest_print', tid=tdoc.docId) }}">打印</a>
+      {% endif %}
+      {% if canExportCode and model.contest.canShowRecord.call(handler, tdoc, true) %}
+        <a href="{{ url('contest_code', tid=tdoc.docId) }}" data-no-instant>导出代码</a>
+      {% endif %}
+    </div>
+    {% if ratingContestUi %}
+      <div class="rating-contest-countdown rating-contest-countdown--compact"
+           data-rating-countdown
+           data-countdown-visibility="ongoing"
+           data-start-at="{{ ratingContestUi.beginAt }}"
+           data-end-at="{{ ratingContestUi.endAt }}"
+           hidden>
+        <span data-rating-countdown-label>距离比赛结束还有：</span>
+        <span class="rating-compact-clock" data-rating-countdown-clock>
+          <strong data-rating-countdown-hours>00</strong><em>时</em>
+          <strong data-rating-countdown-minutes>00</strong><em>分</em>
+          <strong data-rating-countdown-seconds>00</strong><em>秒</em>
+        </span>
+      </div>
+    {% endif %}
+  </nav>
+  {% endif %}
+
+  {% if showRatingRegistration and (ratingContestUi.beforeStart or (not tsdoc.attend and not model.contest.isDone(tdoc))) %}
+  <div class="rating-contest-registration">
+    <div class="section__body">
+      {% if ratingContestUi %}
+        <div class="rating-contest-countdown"
+             data-rating-countdown
+             data-countdown-visibility="before"
+             data-start-at="{{ ratingContestUi.beginAt }}"
+             data-end-at="{{ ratingContestUi.endAt }}"
+             {% if tsdoc.attend %}data-start-redirect="{{ url('contest_problemlist', tid=tdoc.docId) }}"{% endif %}>
+          <span data-rating-countdown-label>正在计算比赛时间</span>
+          <span class="rating-large-clock" data-rating-countdown-clock>
+            <span><strong data-rating-countdown-hours>00</strong><em>小时</em></span>
+            <span><strong data-rating-countdown-minutes>00</strong><em>分钟</em></span>
+            <span><strong data-rating-countdown-seconds>00</strong><em>秒</em></span>
+          </span>
+        </div>
+      {% endif %}
+
+      {% if tsdoc.attend %}
+        <div class="rating-registration-state{% if ratingContestUi.isRated and tsdoc.unrank %} is-star{% elif ratingContestUi.isRated %} is-formal{% endif %}">
+          {% if ratingContestUi.isRated %}已{{ '打星' if tsdoc.unrank else '正式' }}报名{% else %}已报名{% endif %}
+        </div>
+        {% if ratingContestUi and ratingContestUi.canChangeRegistration %}
+          <div class="rating-registration-actions" data-rating-before-start-actions>
+            <button type="button" class="expanded button rating-cancel-registration" data-rating-open="rating-cancel-dialog">取消报名</button>
+            {% if ratingContestUi.isRated %}
+              <button type="button" class="expanded hollow button" data-rating-open="rating-modify-dialog">修改参赛身份</button>
+            {% endif %}
+          </div>
+        {% endif %}
+      {% elif not model.contest.isDone(tdoc) %}
+        <div class="rating-registration-actions">
+        {% if handler.user.hasPerm(perm.PERM_ATTEND_CONTEST) and handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+          <button type="button" class="expanded primary button" data-rating-open="rating-attend-dialog">参加比赛</button>
+        {% elif not handler.user.hasPriv(PRIV.PRIV_USER_PROFILE) %}
+          <a class="expanded primary button" href="javascript:showSignInDialog()">{{ _('Login to Attend Contest') }}</a>
+        {% elif not handler.user._dudoc.join %}
+          <a class="expanded primary button" href="/domain/join?target={{ tdoc.domainId }}">{{ _('Join Domain to Attend Contest') }}</a>
+        {% else %}
+          <span class="expanded disabled button">{{ _('No Permission to Attend Contest') }}</span>
+        {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+</section>

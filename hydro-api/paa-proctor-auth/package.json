@@ -1,0 +1,10 @@
+{
+  "name": "paa-proctor-auth",
+  "version": "0.1.0",
+  "description": "HydroOJ proctor login ticket plugin for PAA online proctoring.",
+  "main": "index.ts",
+  "private": true,
+  "peerDependencies": {
+    "hydrooj": "*"
+  }
+}
