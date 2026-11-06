@@ -11,9 +11,16 @@ public class BoardVO {
 
     private Long eventId;
     private String title;
+    private String sessionName;
+    public String getSessionName() { return sessionName; }
+    public void setSessionName(String value) { sessionName = value; }
     private String type;
     private String status;
     private boolean unfrozen;
+    private boolean resolverEnabled;
+
+    public boolean isResolverEnabled() { return resolverEnabled; }
+    public void setResolverEnabled(boolean enabled) { resolverEnabled = enabled; }
     private LocalDateTime startTime;
     private LocalDateTime endTime;
     private String freezeTime;

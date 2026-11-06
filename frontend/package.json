@@ -10,7 +10,8 @@
     "test:security": "node scripts/security-regression.mjs",
     "test:qq-bot-security": "node scripts/qq-bot-security-regression.mjs",
     "test:board-progress": "node scripts/board-progress-regression.mjs",
-    "test:board-participants": "node scripts/board-participants-regression.mjs"
+    "test:board-participants": "node scripts/board-participants-regression.mjs",
+    "test:resolver": "node scripts/resolver-input-regression.mjs && node scripts/resolver-motion-regression.mjs && node scripts/resolver-layout-regression.mjs && node scripts/resolver-display-regression.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.3.1",

@@ -40,16 +40,27 @@ export function useBoardDesktopLayout(contentKey: string) {
       frame = requestAnimationFrame(() => {
         const currentScale = content.getBoundingClientRect().width / content.offsetWidth || 1;
         let width = Math.max(1280, viewport.clientWidth);
-        const title = content.querySelector('.rank-page-title h3');
+        const title = content.querySelector<HTMLElement>('.rank-page-title h3');
         if (title) {
           const range = document.createRange();
           range.selectNodeContents(title);
-          width = Math.max(width, range.getBoundingClientRect().width / currentScale + 96);
+          const insets = content.offsetWidth - title.clientWidth;
+          width = Math.max(width, range.getBoundingClientRect().width / currentScale + insets);
         }
         content.querySelectorAll<HTMLElement>('.rank-page-filters, .board-submission-filters, .rank-page-timeline-bottom').forEach(row => {
-          width = Math.max(width, row.scrollWidth + 96);
+          // A stretched row's scrollWidth includes its current allocated width.
+          // Adding a fixed margin to that width feeds each fit back into the next.
+          // Instead measure actual controls, ignoring flexible empty spacers.
+          const children = Array.from(row.children).filter((child): child is HTMLElement => child instanceof HTMLElement && getComputedStyle(child).display !== 'none');
+          const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+          const required = children.reduce((sum, child) => {
+            const spacer = Number(getComputedStyle(child).flexGrow) > 0 && !child.textContent?.trim() && child.children.length === 0;
+            return sum + (spacer ? 0 : child.getBoundingClientRect().width / currentScale);
+          }, Math.max(0, children.length - 1) * gap);
+          const insets = content.offsetWidth - row.clientWidth;
+          width = Math.max(width, required + insets);
         });
-        width = Math.ceil(width);
+        width = Math.ceil(width - .01);
         const scale = Math.min(1, Math.max(1, viewport.clientWidth) / width);
         const height = Math.ceil(content.offsetHeight * scale);
         setFit(previous => previous.width === width && Math.abs(previous.scale - scale) < 0.0001 && previous.height === height

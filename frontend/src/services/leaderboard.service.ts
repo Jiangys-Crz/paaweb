@@ -25,7 +25,7 @@ export const getBoardConfig = async (boardId: string | number) => {
   return axios.get<{ code: number; data: ExternalBoardConfig }>(`${API_PREFIX}/leaderboard/admin/config/${boardId}`);
 };
 
-export const updateBoardConfig = async (data: ExternalBoardConfig) => {
+export const updateBoardConfig = async (data: Partial<ExternalBoardConfig> & Pick<ExternalBoardConfig, 'boardId' | 'eventId'>) => {
   return axios.post<{ code: number; msg: string }>(`${API_PREFIX}/leaderboard/admin/config/update`, data);
 };
 

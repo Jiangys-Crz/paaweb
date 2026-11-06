@@ -33,7 +33,7 @@ public interface SignupTeamMapper extends BaseMapper<SignupTeam> {
             "OR member.real_name LIKE CONCAT('%', #{keyword}, '%') " +
             "OR member.number_id LIKE CONCAT('%', #{keyword}, '%')) " +
             "</if>" +
-            "ORDER BY s.signup_time DESC" +
+            "ORDER BY s.signup_time DESC, s.signup_id DESC" +
             "</script>")
     Page<SignupTeam> selectSignupPage(Page<SignupTeam> page, @Param("eventId") Long eventId, @Param("status") String status, @Param("teamType") String teamType, @Param("keyword") String keyword);
 

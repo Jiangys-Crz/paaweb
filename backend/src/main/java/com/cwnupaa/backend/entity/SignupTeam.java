@@ -1,5 +1,6 @@
 package com.cwnupaa.backend.entity;
 
+import com.cwnupaa.backend.utils.AdvisorNames;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -80,11 +81,11 @@ public class SignupTeam {
     }
 
     public String getAdvisor() {
-        return advisor;
+        return AdvisorNames.normalize(advisor);
     }
 
     public void setAdvisor(String advisor) {
-        this.advisor = advisor;
+        this.advisor = AdvisorNames.normalize(advisor);
     }
 
     public String getType() {

@@ -32,6 +32,14 @@
 - 许可：**SIL Open Font License 1.1**。
 - 字体随附的版权与完整许可：[OFL.txt](backend/src/main/resources/fonts/OFL.txt)。请在再次分发字体时保留该文件，遵守其中保留字体名称与字体独立销售等条件。
 
+## ICPC Tools Resolver 与参考资源
+
+- 上游：[icpctools/icpctools](https://github.com/icpctools/icpctools)。本版本使用 ICPC Tools `2.7.1354` 的 contest model/resolver 生成滚榜步骤。
+- 随仓库分发：`backend/lib/contestModel-2.7.1354.jar`、`frontend/public/resolver/` 中的参考图片，以及 `frontend/public/fonts/resolver-helvetica.ttf`。
+- 许可为 **ICPC Software License**，完整文本保存在 [后端组件许可](backend/lib/ICPC-SOFTWARE-LICENSE.txt)、[图片许可](frontend/public/resolver/ICPC-SOFTWARE-LICENSE.txt)及 [参考字体许可](frontend/public/fonts/icpc-license.txt)。
+- 该许可含非商业/非创收用途限制、公开源代码和保留许可的条件，并保留基金会书面撤销授权的条款。根目录 MIT 许可不替代这些条款。分发时应同时保留原始许可和上游源码入口。
+- 中文滚榜字体 `frontend/public/fonts/resolver-noto-sans-sc.woff2` 独立适用 **SIL Open Font License 1.1**，版权和完整许可位于 [noto-OFL.txt](frontend/public/fonts/noto-OFL.txt)。
+
 ## 外部运行依赖
 
 PostgreSQL、Redis、Nginx、Node.js、Java、Spring Boot、Next.js、React、Ant Design、NapCat 和 HydroOJ 等运行依赖各自使用自己的许可。Docker 镜像和依赖包由部署流程按配置获取，其源码、商标、版权和许可不由本项目重新授权。

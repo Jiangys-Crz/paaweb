@@ -28,6 +28,7 @@ public class FileAccessPolicy {
     @Autowired private FileSystemMapper fileSystemMapper;
     @Autowired private UserMapper userMapper;
     @Autowired private UniversityMapper universityMapper;
+    @Autowired private SchoolMapper schoolMapper;
     @Autowired private FileRelationMapper fileRelationMapper;
     @Autowired private SysIntroMapper sysIntroMapper;
     @Autowired private NoticeMapper noticeMapper;
@@ -264,6 +265,7 @@ public class FileAccessPolicy {
         Long id = file.getFileId();
         return userMapper.selectCount(new QueryWrapper<Users>().and(q -> q.eq("avatar_file_id", id).or().eq("background_file_id", id))) > 0
                 || universityMapper.selectCount(new QueryWrapper<University>().eq("logo_file_id", id)) > 0
+                || schoolMapper.selectCount(new QueryWrapper<School>().eq("logo_file_id", id)) > 0
                 || fileRelationMapper.selectCount(new QueryWrapper<FileRelation>().eq("file_id", id).in("biz_type", "notice", "event", "training")) > 0
                 || contestCategoryMapper.selectCount(new QueryWrapper<ContestCategory>().eq("logo_file_id", id)) > 0
                 || noticeMapper.selectCount(new QueryWrapper<Notice>().eq("cover_file_id", id)) > 0

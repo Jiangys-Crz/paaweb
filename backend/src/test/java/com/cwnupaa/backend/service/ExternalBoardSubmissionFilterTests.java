@@ -40,6 +40,7 @@ class ExternalBoardSubmissionFilterTests {
         ReflectionTestUtils.setField(service, "submitRecordMapper", submissions);
         event = new Event();
         event.setExternalOpen(true);
+        event.setEventStart(LocalDateTime.of(2026, 10, 14, 9, 0));
         event.setEventEnd(LocalDateTime.of(2026, 10, 14, 14, 0));
         event.setFreezeTime(LocalDateTime.of(2026, 10, 14, 13, 0));
         event.setUnfrozen(false);
@@ -57,14 +58,14 @@ class ExternalBoardSubmissionFilterTests {
         long timePoint = replayTime.atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
         service.getBoardSubmissions(7L, 2, 10, "A", null, null, 42L, null, timePoint);
         assertThat(capturedQuery.getSqlSegment()).contains("board_id =", "problem_id =", "signup_team_id =", "submit_time <=", "ORDER BY submit_time DESC").doesNotContain("user_id =");
-        assertThat(capturedQuery.getParamNameValuePairs().values()).containsExactlyInAnyOrder(7L, 42L, replayTime, "A");
+        assertThat(capturedQuery.getParamNameValuePairs().values()).containsExactlyInAnyOrder(7L, 42L, replayTime, "A", event.getEventStart(), event.getEventEnd());
     }
 
     @Test
     void personalHistoryUsesUserIdWithoutMatchingUnrelatedTeamIds() {
         service.getBoardSubmissions(7L, 1, 10, "B", null, null, null, 42L, null);
         assertThat(capturedQuery.getSqlSegment()).contains("board_id =", "problem_id =", "user_id =").doesNotContain("signup_team_id =");
-        assertThat(capturedQuery.getParamNameValuePairs().values()).containsExactlyInAnyOrder(7L, 42L, "B");
+        assertThat(capturedQuery.getParamNameValuePairs().values()).containsExactlyInAnyOrder(7L, 42L, "B", event.getEventStart(), event.getEventEnd());
     }
 
     @Test

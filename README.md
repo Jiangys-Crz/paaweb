@@ -4,8 +4,8 @@ PAA Web 是面向程序设计竞赛、校内训练和学生组织的管理平台
 
 本仓库提供通用初始配置和最小基础数据。首次初始化不会导入真实人员、历史比赛、证书、报名记录或上传附件。
 
-- 仓库地址：[gitee.com/Zyihan_Crz/paaweb](https://gitee.com/Zyihan_Crz/paaweb)
-- 主应用许可：[MIT](LICENSE)。独立 Hydro 插件中的上游衍生模板适用 AGPL-3.0，字体和图标等另有许可，详见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+- 仓库地址：[github.com/Jiangys-Crz/paaweb](https://github.com/Jiangys-Crz/paaweb)
+- 主应用原创部分许可：[MIT](LICENSE)。Hydro 衍生模板适用 AGPL-3.0；滚榜的 ICPC Tools 组件、参考字体及图片适用独立的 ICPC Software License，含非商业用途和公开源码条件；其他字体及图标另有许可，详见 [第三方说明](THIRD_PARTY_NOTICES.md)。
 - 初始管理员：`admin`
 - 初始密码：`admin123456`
 - 默认访问地址：`http://localhost:3403`
@@ -100,7 +100,7 @@ Nginx gateway :3403
 ### 2. 获取代码
 
 ```bash
-git clone https://gitee.com/Zyihan_Crz/paaweb.git
+git clone https://github.com/Jiangys-Crz/paaweb.git
 cd paaweb
 ```
 
@@ -196,6 +196,7 @@ bash scripts/reset-admin-password.sh
 | `POSTGRES_USER` | `paaweb`；数据库用户 |
 | `POSTGRES_PASSWORD` | 必填；初始化脚本生成随机值 |
 | `PUBLIC_SITE_URL` | `http://localhost:3403`；公开站点地址，供页面元信息、邮件和证书验真链接使用 |
+| `PUBLIC_VP_SITE_URL` | 留空；填写 HTTP/HTTPS 地址后在页脚显示“VP系统”链接 |
 | `SERVER_SERVLET_SESSION_COOKIE_SECURE` | 默认 `false` 便于本机 HTTP；公开站点使用 HTTPS 时设为 `true` |
 | `CORS_ALLOWED_ORIGINS` | 默认空时只允许站点地址；填写后覆盖允许列表，本地开发可设 `http://localhost:3000`，多个地址用逗号分隔 |
 | `SPRING_MAIL_HOST` | 默认空；SMTP 服务器 |
@@ -516,3 +517,51 @@ docker compose config --quiet
 - 主应用使用 [MIT License](LICENSE)；[第三方说明](THIRD_PARTY_NOTICES.md) 中列出的组件适用各自许可。新增代码、字体或图片时保留必要许可与来源。
 
 扫描脚本用于发现常见泄漏和残留，不能替代对新引入资料的人工检查。
+
+
+## 外榜、滚榜与报名更新
+
+外榜支持 XCPC、天梯赛和蓝桥杯，提供响应式题格、按排名排列的搜索置顶、悬浮提交详情和完整长图 PDF 导出。外榜名称按“比赛名称 - 场次”显示；场次可填写正式赛、热身赛或自定义文字。滚榜开场以比赛名称为主标题、场次为副标题。
+
+外榜与滚榜分别配置。XCPC 的滚榜在每个外榜中独立开启，可设置密码、封榜时间、播放间隔、队伍照片、中央赛事封面、学校/学院 LOGO 和奖项。默认显示冠军、亚军、季军及“最佳女队 Best Female”，均可调整；打星队伍不计正式名次。滚榜仅替换中央赛事图片，保留标题和 ICPC Tools 署名。按下空格可推进，Shift+Q 退出；完整键位见滚榜帮助。状态色统一为一血 `#1B5E20`、封榜 `#1447E6`、AC `#4CAF50`、WA `#D32F2F`。
+
+报名指导老师保持选填，提示“选填指导老师（可填班主任）”，多位老师通过“添加”逐个录入。报名结束后不可取消报名；名单公示复用外榜参赛者卡片。后台 Excel 导出读取全部筛选结果，不受列表每页 100 条的限制。批量邮件可按“学校＋学号”粘贴或导入 Excel，收件地址取自站内账号已绑定邮箱；导入后仍需确认发送。
+
+### 已有部署升级
+
+先备份数据库和上传数据，再在**启动新后端之前**按以下顺序执行新增迁移：
+
+```bash
+bash -e <<'BASH'
+for migration in \
+  migration_external_board_resolver.sql \
+  migration_external_board_photos.sql \
+  migration_organization_logos.sql \
+  migration_resolver_playback.sql \
+  migration_resolver_settings.sql \
+  migration_external_board_session_names.sql \
+  migration_signup_advisor_format.sql
+do
+  docker compose exec -T db sh -c 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < "SQL/$migration"
+done
+BASH
+```
+
+这些脚本可重复执行；已有外榜默认不启用滚榜。场次脚本仅整理由旧迁移复制的完整比赛名称，自定义场次不变；指导老师脚本仅规范历史数组/方括号格式，保留姓名及顺序。首次全新部署使用更新后的 `schema.sql` 和通用 `seed.sql`，无需额外执行这些迁移。
+
+迁移成功后运行 `bash up.sh` 构建启动新版本。滚榜照片写入现有 uploads 数据卷，数据库和 uploads 必须一起备份。照片 ZIP 最大 512 MB、单图解压后最大 32 MB；公网反向代理的请求大小和超时应与内部网关保持一致。
+
+滚榜参考组件、字体及图片随包提供并保留原许可；使用前请阅读 [第三方说明](THIRD_PARTY_NOTICES.md#icpc-tools-resolver-与参考资源)，根目录 MIT 许可不覆盖这些独立第三方资源。
+
+### 只读检查与本地回归
+
+```bash
+python3 scripts/check-public-release.py
+cd frontend
+npm ci
+npm run test:resolver
+node scripts/resolver-awards-regression.mjs
+node scripts/award-team-selection-regression.mjs
+```
+
+需要测试封榜权限时，可对隔离的测试榜设置 `RESOLVER_TEST_PASSWORD` 环境变量，再运行 `python3 scripts/test-resolver-http.py http://localhost:3403/api 外榜ID`。脚本只读取公开接口，不解除封榜或修改比赛数据。不要把真实比赛包、密码、上传照片、日志或数据库备份加入仓库。

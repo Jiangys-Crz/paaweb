@@ -3,12 +3,14 @@ package com.cwnupaa.backend.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cwnupaa.backend.dto.ExternalBoardConfigDTO;
+import com.cwnupaa.backend.dto.ResolverSettingsDTO;
 import com.cwnupaa.backend.entity.*;
 import com.cwnupaa.backend.mapper.*;
 import com.cwnupaa.backend.vo.BoardStatsVO;
 import com.cwnupaa.backend.vo.BoardSubmissionVO;
 import com.cwnupaa.backend.vo.BoardVO;
 import com.cwnupaa.backend.vo.ExternalBoardSummaryVO;
+import com.cwnupaa.backend.vo.EventSignupVO;
 import com.cwnupaa.backend.vo.RankItemVO;
 import com.cwnupaa.backend.vo.UserProfileVO;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -53,6 +55,11 @@ public class ExternalBoardService {
     private MajorMapper majorMapper;
     @Autowired
     private SchoolMapper schoolMapper;
+    @Autowired
+    private ResolverPhotoService resolverPhotoService;
+    @Autowired
+    private ResolverEngineService resolverEngineService;
+    @Autowired private UniversityMapper universityMapper;
 
     private ExternalBoard requireBoard(Long boardId) {
         ExternalBoard board = boardId == null ? null : externalBoardMapper.selectById(boardId);
@@ -72,7 +79,6 @@ public class ExternalBoardService {
         if (parent == null) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "赛事不存在");
         Event event = new Event();
         BeanUtils.copyProperties(parent, event);
-        event.setName(board.getName());
         event.setExternalOpen(board.getExternalOpen());
         event.setUnfrozen(board.getUnfrozen());
         event.setActualStartTime(board.getActualStartTime());
@@ -84,7 +90,7 @@ public class ExternalBoardService {
 
     private String validateBoardName(String name) {
         if (!StringUtils.hasText(name) || name.trim().length() > 200) {
-            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "外榜名称须为 1-200 个字符");
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "外榜场次须为 1-200 个字符");
         }
         return name.trim();
     }
@@ -154,6 +160,37 @@ public class ExternalBoardService {
         return board == null ? null : board.getBoardId();
     }
 
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public Map<String,Object> resolverParticipants(Long boardId, UserProfileVO currentUser) {
+        if (currentUser == null)
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.UNAUTHORIZED, "未登录或会话已失效");
+        if ("school_admin".equals(currentUser.getRole()) || !com.cwnupaa.backend.utils.SecurityUtils.hasPermission(currentUser, "manage_contest"))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "权限不足，无法查看比赛结果");
+        Event event=boardEvent(boardId);
+        LocalDateTime end=event.getActualEndTime() != null ? event.getActualEndTime() : event.getEventEnd();
+        boolean rankUnavailable=end == null || LocalDateTime.now().isBefore(end);
+        List<RankItemVO> rows;
+        if (rankUnavailable) {
+            Map<Long,RankItemVO> roster=new LinkedHashMap<>();
+            prepareParticipantInfo(event,roster,false);
+            rows=new ArrayList<>(roster.values());
+            enrichOrganizations(rows,getConfig(boardId).getOrganizationDisplay());
+            rows.sort(Comparator.comparing(row -> row.getName()==null ? "" : row.getName()));
+        } else {
+            // This method is reachable only through the contest-management route.
+            // It can access a closed board, and computes the final unfrozen result.
+            rows=buildBoardDetail(boardId,null,"team",null,null,true,true).getRows();
+        }
+        List<Map<String,Object>> participants = rows.stream().map(row -> {
+            Map<String,Object> item=new LinkedHashMap<>();
+            item.put("itemId",row.getItemId()); item.put("name",row.getName()); item.put("organization",row.getOrganization());
+            item.put("rank",rankUnavailable ? null : row.getRank()); item.put("isGirl",row.getIsGirl()); item.put("isStar",row.getIsStar());
+            item.put("solved",rankUnavailable ? null : row.getSolved()); item.put("penalty",rankUnavailable ? null : row.getPenalty());
+            return item;
+        }).toList();
+        return Map.of("rankUnavailable", rankUnavailable, "participants", participants);
+    }
+
     public ExternalBoardConfigDTO getConfig(Long boardId) {
         ExternalBoard board = requireBoard(boardId);
         ExternalBoardConfigDTO dto = new ExternalBoardConfigDTO();
@@ -161,6 +198,17 @@ public class ExternalBoardService {
         dto.setExternalOpen(board.getExternalOpen());
         dto.setUnfrozen(board.getUnfrozen());
         dto.setFreezeTime(board.getFreezeTime());
+        dto.setOrganizationDisplay("university".equals(board.getOrganizationDisplay()) ? "university" : "school");
+        try {
+            dto.setResolverSettings(StringUtils.hasText(board.getResolverSettings())
+                    ? jsonMapper.readValue(board.getResolverSettings(), ResolverSettingsDTO.class) : new ResolverSettingsDTO());
+        } catch (JsonProcessingException e) {
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.INTERNAL_SERVER_ERROR, "滚榜设置无法读取", e);
+        }
+        dto.setResolverSingleStep(!Boolean.FALSE.equals(board.getResolverSingleStep()));
+        dto.setResolverSpeed(board.getResolverSpeed() == null ? 1.0 : board.getResolverSpeed());
+        dto.setResolverEnabled(Boolean.TRUE.equals(board.getResolverEnabled()));
+        dto.setResolverPasswordSet(StringUtils.hasText(board.getResolverPasswordHash()));
         try {
             if (board.getMedalConfig() != null && !board.getMedalConfig().trim().isEmpty()) {
                 dto.setMedalConfig(jsonMapper.readValue(board.getMedalConfig(), ExternalBoardConfigDTO.MedalConfig.class));
@@ -187,13 +235,66 @@ public class ExternalBoardService {
     public void updateConfig(ExternalBoardConfigDTO dto) {
         lockBoard(dto.getBoardId());
         ExternalBoard board = requireBoard(dto.getBoardId());
-        board.setName(validateBoardName(dto.getName()));
-        board.setExternalOpen(Boolean.TRUE.equals(dto.getExternalOpen()));
-        board.setUnfrozen(Boolean.TRUE.equals(dto.getUnfrozen()));
-        board.setActualStartTime(dto.getActualStartTime());
-        board.setActualEndTime(dto.getActualEndTime());
-        board.setFreezeTime(dto.getFreezeTime());
+        String section = dto.getConfigSection() == null ? "all" : dto.getConfigSection();
+        if (!Set.of("all", "board", "resolver").contains(section))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "配置类型无效");
+        boolean updateBoard = !"resolver".equals(section);
+        boolean updateResolver = !"board".equals(section);
+        // Separate editors update disjoint fields under the same board lock.
+        if (updateBoard) {
+            board.setName(validateBoardName(dto.getName()));
+            if (dto.getOrganizationDisplay() != null) {
+                if (!Set.of("school", "university").contains(dto.getOrganizationDisplay()))
+                    throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "组织显示方式无效");
+                board.setOrganizationDisplay(dto.getOrganizationDisplay());
+            }
+            board.setExternalOpen(Boolean.TRUE.equals(dto.getExternalOpen()));
+            board.setUnfrozen(Boolean.TRUE.equals(dto.getUnfrozen()));
+            board.setActualStartTime(dto.getActualStartTime());
+            board.setActualEndTime(dto.getActualEndTime());
+            board.setFreezeTime(dto.getFreezeTime());
+        }
         Event event = eventMapper.selectById(board.getEventId());
+        if ("resolver".equals(section) && !"XCPC".equals(event.getType()))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "仅 XCPC 外榜支持滚榜配置");
+        if (updateResolver) {
+            if (dto.getResolverEnabled() != null) board.setResolverEnabled(Boolean.TRUE.equals(dto.getResolverEnabled()));
+            if (dto.getResolverSettings() != null) {
+                ResolverSettingsDTO settings = dto.getResolverSettings();
+                settings.validate();
+                if (!settings.getAwards().getCustomAwards().isEmpty()) {
+                    Set<Long> approved = new HashSet<>();
+                    if (Integer.valueOf(1).equals(event.getIsTeam())) {
+                        signupTeamMapper.selectList(new QueryWrapper<SignupTeam>().eq("event_id", event.getEventId()).eq("status", "approved"))
+                                .forEach(s -> approved.add(s.getSignupId()));
+                    } else {
+                        signupPersonalMapper.selectList(new QueryWrapper<SignupPersonal>().eq("event_id", event.getEventId()).eq("status", "approved"))
+                                .forEach(s -> approved.add(s.getUserId()));
+                    }
+                    if (settings.getAwards().getCustomAwards().stream().flatMap(a -> a.getParticipantIds().stream()).anyMatch(id -> !approved.contains(id)))
+                        throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "自定义奖项只能选择当前赛事已通过报名的参赛者");
+                }
+                try { board.setResolverSettings(jsonMapper.writeValueAsString(settings)); }
+                catch (JsonProcessingException e) { throw new IllegalArgumentException("滚榜设置无效", e); }
+            }
+            if (dto.getResolverSingleStep() != null) board.setResolverSingleStep(dto.getResolverSingleStep());
+            if (dto.getResolverSpeed() != null) {
+                if (!Double.isFinite(dto.getResolverSpeed()) || dto.getResolverSpeed() < 0.25 || dto.getResolverSpeed() > 4)
+                    throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "滚榜播放速度必须在 0.25 至 4 之间");
+                board.setResolverSpeed(dto.getResolverSpeed());
+            }
+            if (StringUtils.hasText(dto.getResolverPassword())) {
+                if (dto.getResolverPassword().length() < 12 || dto.getResolverPassword().getBytes(java.nio.charset.StandardCharsets.UTF_8).length > 72)
+                    throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "滚榜密码须至少 12 个字符，UTF-8 编码不得超过 72 字节");
+                board.setResolverPasswordHash(new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder(12).encode(dto.getResolverPassword()));
+            }
+        }
+        if (Boolean.TRUE.equals(board.getResolverEnabled())) {
+            if (!"XCPC".equals(event.getType()))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "仅 XCPC 外榜可启用滚榜");
+            if (!Boolean.TRUE.equals(board.getUnfrozen()) && !StringUtils.hasText(board.getResolverPasswordHash()))
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "封榜时启用滚榜必须设置密码");
+        }
         LocalDateTime start = board.getActualStartTime() != null ? board.getActualStartTime() : event.getEventStart();
         LocalDateTime end = board.getActualEndTime() != null ? board.getActualEndTime() : event.getEventEnd();
         if (start == null || end == null || !start.isBefore(end)) {
@@ -202,13 +303,15 @@ public class ExternalBoardService {
         if (board.getFreezeTime() != null && (board.getFreezeTime().isBefore(start) || board.getFreezeTime().isAfter(end))) {
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "封榜时间须在比赛时间内");
         }
-        try {
-            board.setMedalConfig(dto.getMedalConfig() == null ? "{}" : jsonMapper.writeValueAsString(dto.getMedalConfig()));
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("奖牌配置无效", e);
+        if (updateResolver && (!"resolver".equals(section) || dto.getMedalConfig() != null)) {
+            try {
+                board.setMedalConfig(dto.getMedalConfig() == null ? "{}" : jsonMapper.writeValueAsString(dto.getMedalConfig()));
+            } catch (JsonProcessingException e) {
+                throw new IllegalArgumentException("奖牌配置无效", e);
+            }
         }
         externalBoardMapper.updateById(board);
-        if (dto.getProblems() != null) {
+        if (updateBoard && dto.getProblems() != null) {
             for (ExternalBoardConfigDTO.ProblemConfig pc : dto.getProblems()) {
                 if (pc.getDisplayId() == null || pc.getDisplayId().trim().isEmpty()) continue;
                 EventProblem ep = eventProblemMapper.selectOne(new QueryWrapper<EventProblem>().eq("board_id", board.getBoardId()).eq("display_id", pc.getDisplayId()));
@@ -315,6 +418,8 @@ public class ExternalBoardService {
     public Map<String, Object> getBoardSubmissions(Long boardId, int page, int size, String problemId,
                                                   String status, String keyword, Long signupTeamId,
                                                   Long userId, Long timePoint) {
+        if (page < 1 || page > 1000000 || size < 1 || size > 200)
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST, "分页参数无效，每页最多200条");
         Event event = requirePublicEvent(boardId);
         Long eventId = event.getEventId();
 
@@ -328,6 +433,7 @@ public class ExternalBoardService {
 
         QueryWrapper<SubmitRecord> query = new QueryWrapper<>();
         query.eq("board_id", boardId);
+        constrainXcpcTime(query, event);
         if (signupTeamId != null) query.eq("signup_team_id", signupTeamId);
         if (userId != null) query.eq("user_id", userId);
         if (timePoint != null) {
@@ -432,6 +538,9 @@ public class ExternalBoardService {
         if (now.isBefore(endTime)) throw new RuntimeException("Competition is running. Code details are hidden.");
         if (!Boolean.TRUE.equals(event.getUnfrozen()))
             throw new RuntimeException("Code details are not available until the contest is unfrozen.");
+        LocalDateTime startTime = event.getActualStartTime() != null ? event.getActualStartTime() : event.getEventStart();
+        if (isXcpc(event) && (r.getSubmitTime() == null || (startTime != null && r.getSubmitTime().isBefore(startTime)) || r.getSubmitTime().isAfter(endTime)))
+            throw new RuntimeException("Submission is outside the competition period.");
         Map<String, String> map = new HashMap<>();
         map.put("content", r.getCodeContent());
         map.put("language", r.getLanguage());
@@ -439,7 +548,16 @@ public class ExternalBoardService {
     }
 
     public BoardVO getBoardDetail(Long boardId, Long timePoint, String scope, String groupFilter, UserProfileVO currentUser) {
-        Event event = requirePublicEvent(boardId);
+        return buildBoardDetail(boardId, timePoint, scope, groupFilter, currentUser, null);
+    }
+
+    private BoardVO buildBoardDetail(Long boardId, Long timePoint, String scope, String groupFilter, UserProfileVO currentUser, Boolean unfreezeOverride) {
+        return buildBoardDetail(boardId, timePoint, scope, groupFilter, currentUser, unfreezeOverride, false);
+    }
+
+    private BoardVO buildBoardDetail(Long boardId, Long timePoint, String scope, String groupFilter, UserProfileVO currentUser, Boolean unfreezeOverride, boolean allowClosedBoard) {
+        Event event = allowClosedBoard ? boardEvent(boardId) : requirePublicEvent(boardId);
+        if (unfreezeOverride != null) event.setUnfrozen(unfreezeOverride);
         Long eventId = event.getEventId();
 
         boolean isAdmin = currentUser != null && ("supper_admin".equals(currentUser.getRole()) || "admin".equals(currentUser.getRole()));
@@ -449,8 +567,10 @@ public class ExternalBoardService {
         vo.setEventId(eventId);
         vo.setBoardId(boardId);
         vo.setTitle(event.getName());
+        vo.setSessionName(config.getName());
         vo.setIsTeam(event.getIsTeam());
         vo.setUnfrozen(Boolean.TRUE.equals(event.getUnfrozen()));
+        vo.setResolverEnabled(Boolean.TRUE.equals(config.getResolverEnabled()));
         String type = event.getType();
         if (type == null || type.isEmpty()) type = "XCPC";
         vo.setType(type);
@@ -483,7 +603,8 @@ public class ExternalBoardService {
         }).collect(Collectors.toList());
         vo.setProblems(problemInfos);
 
-        QueryWrapper<SubmitRecord> queryWrapper = new QueryWrapper<SubmitRecord>().eq("board_id", boardId).orderByAsc("submit_time");
+        QueryWrapper<SubmitRecord> queryWrapper = new QueryWrapper<SubmitRecord>().eq("board_id", boardId).orderByAsc("submit_time", "submit_record_id");
+        constrainXcpcTime(queryWrapper, event);
         if (timePoint != null) {
             queryWrapper.le("submit_time", now);
         }
@@ -503,9 +624,15 @@ public class ExternalBoardService {
             calculateGPLTPersonalStats(vo, records, config, now, rows);
         } else {
             List<RankItemVO> allRows = calculateXCPCRank(event, records, config, isAdmin);
-            calculateProblemStatsXCPC(event, vo, records);
+            // Problem aggregates must obey the same freeze boundary as the rank.
+            LocalDateTime visibleUntil = freezeTime != null ? freezeTime : end.minusHours(1);
+            List<SubmitRecord> visibleRecords = Boolean.TRUE.equals(event.getUnfrozen()) ? records
+                    : records.stream().filter(r -> !r.getSubmitTime().isAfter(visibleUntil)).toList();
+            calculateProblemStatsXCPC(event, vo, visibleRecords);
             rows = allRows;
         }
+
+        enrichOrganizations(rows, config.getOrganizationDisplay());
 
         if (StringUtils.hasText(groupFilter) && !"all".equals(groupFilter)) {
             rows = rows.stream().filter(r -> groupFilter.equals(r.getGroup())).collect(Collectors.toList());
@@ -513,6 +640,78 @@ public class ExternalBoardService {
 
         vo.setRows(rows);
         return vo;
+    }
+
+    private final java.util.concurrent.Semaphore resolverRequests = new java.util.concurrent.Semaphore(2);
+    private final java.util.concurrent.Semaphore resolverPasswordChecks = new java.util.concurrent.Semaphore(4);
+    private final com.github.benmanes.caffeine.cache.Cache<String, Deque<Long>> resolverAttempts = com.github.benmanes.caffeine.cache.Caffeine.newBuilder().maximumSize(20000).expireAfterAccess(java.time.Duration.ofMinutes(2)).build();
+
+    public Map<String, Object> resolveBoard(Long boardId, String password) {
+        return resolveBoard(boardId,password,"internal");
+    }
+
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public Map<String, Object> resolveBoard(Long boardId, String password, String source) {
+        if (!resolverRequests.tryAcquire())
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "正在准备其他滚榜数据，请稍后重试");
+        try { return prepareResolver(boardId, password, source); }
+        finally { resolverRequests.release(); }
+    }
+
+    private Map<String, Object> prepareResolver(Long boardId, String password, String source) {
+        Event event = requirePublicEvent(boardId);
+        ExternalBoard board = requireBoard(boardId);
+        if (!"XCPC".equals(event.getType()) || !Boolean.TRUE.equals(board.getResolverEnabled()))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "滚榜未启用");
+        LocalDateTime end = event.getActualEndTime() != null ? event.getActualEndTime() : event.getEventEnd();
+        if (end == null || LocalDateTime.now().isBefore(end))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "比赛结束后才能滚榜");
+        if (!Boolean.TRUE.equals(board.getUnfrozen())) {
+            Deque<Long> attempts = resolverAttempts.get(boardId+":"+source, ignored -> new ArrayDeque<>());
+            synchronized (attempts) {
+                long now = System.currentTimeMillis();
+                while (!attempts.isEmpty() && attempts.peekFirst() < now - 60_000) attempts.removeFirst();
+                if (attempts.size() >= 10)
+                    throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "尝试过于频繁，请稍后重试");
+                attempts.addLast(now);
+            }
+            String hash = board.getResolverPasswordHash();
+            boolean matches = false;
+            if (StringUtils.hasText(hash) && password != null && password.getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 72) {
+                if (!resolverPasswordChecks.tryAcquire())
+                    throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS, "正在验证其他滚榜请求，请稍后重试");
+                try { matches = new org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder().matches(password, hash); }
+                finally { resolverPasswordChecks.release(); }
+            }
+            if (!matches)
+                throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.FORBIDDEN, "滚榜密码错误");
+            synchronized (attempts) { attempts.clear(); }
+        }
+        BoardVO frozen = buildBoardDetail(boardId, null, "team", null, null, false);
+        BoardVO full = buildBoardDetail(boardId, null, "team", null, null, true);
+        resolverPhotoService.attach(boardId, frozen, full);
+        LocalDateTime start = event.getActualStartTime() != null ? event.getActualStartTime() : event.getEventStart();
+        LocalDateTime freeze = event.getFreezeTime() != null ? event.getFreezeTime() : end.minusHours(1);
+        Set<Long> participantIds=full.getRows().stream().map(RankItemVO::getItemId).collect(Collectors.toSet());
+        Set<String> problemIds=full.getProblems().stream().map(BoardVO.ProblemInfo::getId).collect(Collectors.toSet());
+        List<Map<String,Object>> submissions = new ArrayList<>();
+        for (SubmitRecord record : submitRecordMapper.selectList(new QueryWrapper<SubmitRecord>().eq("board_id",boardId).ge("submit_time",start).le("submit_time",end).orderByAsc("submit_time","submit_record_id"))) {
+            Long id=getParticipantId(event,record);
+            if(id==null || !participantIds.contains(id) || !problemIds.contains(record.getProblemId())) continue;
+            Map<String,Object> submission=new LinkedHashMap<>();
+            submission.put("submissionId",record.getSubmitRecordId()); submission.put("participantId",id);
+            submission.put("problemId",record.getProblemId()); submission.put("timeMillis",Duration.between(start,record.getSubmitTime()).toMillis());
+            submission.put("result",record.getResult()); submission.put("frozen",record.getSubmitTime().isAfter(freeze));
+            submissions.add(submission);
+        }
+        ExternalBoardConfigDTO resolverConfig = getConfig(boardId);
+        return Map.of("frozenBoard", frozen, "finalBoard", full, "submissions",submissions,
+                "medalConfig",resolverConfig.getMedalConfig(),
+                "resolutionSteps", resolverEngineService.generate(frozen, full, submissions, !Boolean.FALSE.equals(board.getResolverSingleStep()), resolverConfig.getResolverSettings()),
+                "resolverSettings", resolverConfig.getResolverSettings(),
+                "coverUrl", resolverPhotoService.coverUrl(boardId),
+                "resolverSingleStep", !Boolean.FALSE.equals(board.getResolverSingleStep()),
+                "resolverSpeed", board.getResolverSpeed() == null ? 1.0 : board.getResolverSpeed());
     }
 
     public BoardStatsVO getStatistics(Long boardId, Long timePoint) {
@@ -536,6 +735,7 @@ public class ExternalBoardService {
         final boolean isUnfrozen = Boolean.TRUE.equals(event.getUnfrozen());
 
         QueryWrapper<SubmitRecord> queryWrapper = new QueryWrapper<SubmitRecord>().eq("board_id", boardId);
+        constrainXcpcTime(queryWrapper, event);
         LocalDateTime queryTimeLimit = null;
         if (timePoint != null) {
             queryTimeLimit = now;
@@ -558,6 +758,7 @@ public class ExternalBoardService {
         else if ("LANQIAO".equals(type)) rankList = calculateLanqiaoRank(event, records, config, false);
         else rankList = calculateXCPCRank(event, records, config, false);
 
+        enrichOrganizations(rankList, config.getOrganizationDisplay());
         stats.setParticipantCount(rankList.size());
         long orgCount = rankList.stream().map(RankItemVO::getOrganization).filter(Objects::nonNull).filter(s -> !s.isEmpty() && !"CWNU".equals(s)).distinct().count();
         stats.setOrganizationCount((int) orgCount);
@@ -809,6 +1010,7 @@ public class ExternalBoardService {
             tVo.setHasSubmission(submittedTeamIds.contains(s.getSignupId()));
             tVo.setName(StringUtils.hasText(s.getTeamName()) ? s.getTeamName() : "Unknown");
             tVo.setGroup(s.getType());
+            tVo.setAdvisor(s.getAdvisor());
             tVo.setIsStar("star".equals(s.getType()) || (s.getIsRanking() != null && s.getIsRanking() == 0));
             tVo.setMembers(String.join(", ", names));
             tVo.setMemberIds(memberIds);
@@ -819,7 +1021,6 @@ public class ExternalBoardService {
             String org = "CWNU";
             Users leader = ds.isEmpty() ? null : personMap.get(ds.get(0).getUserId());
             if (leader != null) {
-                org = resolveSchoolName(leader);
                 if (leader.getAvatarFileId() != null) tVo.setAvatar("/api/file/download/" + leader.getAvatarFileId());
             }
             tVo.setOrganization(org);
@@ -841,6 +1042,20 @@ public class ExternalBoardService {
                 int current = tVo.getTotalScore() != null ? tVo.getTotalScore() : 0;
                 int score = p.getTotalScore() != null ? p.getTotalScore() : 0;
                 tVo.setTotalScore(current + score);
+                // Display the sum of members' existing best scores without changing team ranking.
+                for (Map.Entry<String, RankItemVO.ProblemStatus> entry : p.getProblemStatus().entrySet()) {
+                    if (!"Scored".equals(entry.getValue().getStatus())) continue;
+                    RankItemVO.ProblemStatus teamProblem = tVo.getProblemStatus().computeIfAbsent(entry.getKey(), key -> {
+                        RankItemVO.ProblemStatus cell = new RankItemVO.ProblemStatus();
+                        cell.setStatus("Scored");
+                        cell.setScore(0);
+                        int maximum = config.getProblems().stream().filter(problem -> key.equals(problem.getDisplayId()))
+                                .map(problem -> problem.getScore() == null ? 100 : problem.getScore()).findFirst().orElse(100);
+                        cell.setMaxScore(maximum * tVo.getMemberIds().size());
+                        return cell;
+                    });
+                    teamProblem.setScore(teamProblem.getScore() + entry.getValue().getScore());
+                }
                 if (score > 0 && p.getPenaltyMillis() != null) {
                     if (tVo.getPenaltyMillis() == null || p.getPenaltyMillis() > tVo.getPenaltyMillis()) {
                         tVo.setPenaltyMillis(p.getPenaltyMillis());
@@ -961,6 +1176,7 @@ public class ExternalBoardService {
                 if (ps.solved) {
                     voPs.setStatus("AC");
                     voPs.setTime(ps.solveTime);
+                    voPs.setTimeMillis(ps.solveTimeMillis);
                     voPs.setTryCount(ps.preFreezeErrors + 1);
                     voPs.setIsFirstAc(ps.isFirstAc);
                     item.setSolved(item.getSolved() + 1);
@@ -1027,7 +1243,6 @@ public class ExternalBoardService {
             if (u != null) {
                 name = u.getRealName();
                 if (u.getAvatarFileId() != null) avatar = "/api/file/download/" + u.getAvatarFileId();
-                org = resolveSchoolName(u);
                 if (isAdmin) {
                     RankItemVO.MemberInfo info = new RankItemVO.MemberInfo();
                     info.setName(u.getRealName());
@@ -1039,6 +1254,7 @@ public class ExternalBoardService {
             v.setAvatar(avatar);
             v.setOrganization(org);
             v.setGroup(st.getType());
+            v.setAdvisor(st.getAdvisor());
             v.setIsStar("star".equals(st.getType()) || (st.getIsRanking() != null && st.getIsRanking() == 0));
             v.setIsGirl(u != null && u.getGender() != null && u.getGender() == 2);
             v.setTotalScore(0);
@@ -1200,19 +1416,85 @@ public class ExternalBoardService {
         }
     }
 
+    private boolean isXcpc(Event event) {
+        return !StringUtils.hasText(event.getType()) || "XCPC".equals(event.getType());
+    }
+
+    private void constrainXcpcTime(QueryWrapper<SubmitRecord> query, Event event) {
+        if (!isXcpc(event)) return;
+        LocalDateTime start = event.getActualStartTime() != null ? event.getActualStartTime() : event.getEventStart();
+        LocalDateTime end = event.getActualEndTime() != null ? event.getActualEndTime() : event.getEventEnd();
+        if (start != null) query.ge("submit_time", start);
+        if (end != null) query.le("submit_time", end);
+    }
+
     private Long getParticipantId(Event event, SubmitRecord record) {
         return Integer.valueOf(1).equals(event.getIsTeam()) ? record.getSignupTeamId() : record.getUserId();
     }
 
-    private String resolveSchoolName(Users user) {
-        if (user != null && user.getMajorId() != null) {
-            Major major = majorMapper.selectById(user.getMajorId());
-            if (major != null && major.getSchoolId() != null) {
-                School school = schoolMapper.selectById(major.getSchoolId());
-                if (school != null) return school.getSchoolName();
-            }
+    /** Resolve all participants together, so logo lookup does not add a query per row. */
+    /** Public signup cards follow the formal board, then an open board, then the first configured board. */
+    public void enrichSignupOrganizations(Long eventId, Map<EventSignupVO, Long> participants) {
+        List<ExternalBoard> boards = externalBoardMapper.selectList(new QueryWrapper<ExternalBoard>()
+                .eq("event_id", eventId).orderByAsc("board_id"));
+        ExternalBoard selected = boards.stream().filter(board -> "正式赛".equals(board.getName())).findFirst()
+                .orElseGet(() -> boards.stream().filter(board -> Boolean.TRUE.equals(board.getExternalOpen())).findFirst()
+                        .orElse(boards.isEmpty() ? null : boards.get(0)));
+        String display = selected == null ? "school" : selected.getOrganizationDisplay();
+        List<EventSignupVO> signups = new ArrayList<>();
+        List<RankItemVO> identities = new ArrayList<>();
+        participants.forEach((signup, userId) -> {
+            if (userId == null) return;
+            RankItemVO identity = new RankItemVO();
+            identity.setMemberIds(List.of(userId));
+            identity.setOrganization(signup.getSchoolName());
+            identities.add(identity);
+            signups.add(signup);
+        });
+        enrichOrganizations(identities, display);
+        for (int index = 0; index < signups.size(); index++) {
+            signups.get(index).setOrganization(identities.get(index).getOrganization());
+            signups.get(index).setOrganizationLogo(identities.get(index).getOrganizationLogo());
         }
-        return "CWNU";
+    }
+
+    private void enrichOrganizations(List<RankItemVO> rows, String display) {
+        Set<Long> ids = rows.stream().map(RankItemVO::getMemberIds).filter(Objects::nonNull)
+                .filter(members -> !members.isEmpty()).map(members -> members.get(0))
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        if (ids.isEmpty()) return;
+        List<Users> users = userMapper.selectBatchIds(ids);
+        if (users == null || users.isEmpty()) return;
+        Map<Long, Users> byUser = users.stream().collect(Collectors.toMap(Users::getUserId, u -> u));
+        Set<Long> majorIds = users.stream().map(Users::getMajorId).filter(Objects::nonNull).collect(Collectors.toSet());
+        if (majorIds.isEmpty()) return;
+        List<Major> majors = majorMapper.selectBatchIds(majorIds);
+        if (majors == null || majors.isEmpty()) return;
+        Map<Long, Major> byMajor = majors.stream().collect(Collectors.toMap(Major::getMajorId, m -> m));
+        Set<Long> schoolIds = majors.stream().map(Major::getSchoolId).filter(Objects::nonNull).collect(Collectors.toSet());
+        if (schoolIds.isEmpty()) return;
+        List<School> schools = schoolMapper.selectBatchIds(schoolIds);
+        if (schools == null || schools.isEmpty()) return;
+        Map<Long, School> bySchool = schools.stream().collect(Collectors.toMap(School::getSchoolId, school -> school));
+        Set<Long> universityIds = schools.stream().map(School::getUniversityId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<Long, University> byUniversity = new HashMap<>();
+        if (!universityIds.isEmpty()) {
+            List<University> universities = universityMapper.selectBatchIds(universityIds);
+            if (universities != null) universities.forEach(u -> byUniversity.put(u.getUniversityId(), u));
+        }
+        boolean universityMode = "university".equals(display);
+        for (RankItemVO row : rows) {
+            if (row.getMemberIds() == null || row.getMemberIds().isEmpty()) continue;
+            Users user = byUser.get(row.getMemberIds().get(0));
+            Major major = user == null ? null : byMajor.get(user.getMajorId());
+            School school = major == null ? null : bySchool.get(major.getSchoolId());
+            if (school == null) continue;
+            University university = byUniversity.get(school.getUniversityId());
+            row.setOrganization(universityMode && university != null ? university.getUniversityName() : school.getSchoolName());
+            Long logoId = !universityMode ? school.getLogoFileId() : null;
+            if (logoId == null && university != null) logoId = university.getLogoFileId();
+            row.setOrganizationLogo(logoId == null ? null : "/api/file/image/" + logoId);
+        }
     }
 
     private boolean isAc(String result) {
@@ -1290,7 +1572,6 @@ public class ExternalBoardService {
                     }
                     if (i == 0) {
                         if (u.getAvatarFileId() != null) avatar = "/api/file/download/" + u.getAvatarFileId();
-                        org = resolveSchoolName(u);
                     }
                 }
 
@@ -1299,6 +1580,7 @@ public class ExternalBoardService {
 
                 v.setName(name);
                 v.setGroup(s.getType());
+                v.setAdvisor(s.getAdvisor());
                 v.setIsStar("star".equalsIgnoreCase(s.getType()) || (s.getIsRanking() != null && s.getIsRanking() == 0));
                 v.setIsGirl("girl".equalsIgnoreCase(s.getType()));
                 v.setOrganization(org);
@@ -1326,13 +1608,6 @@ public class ExternalBoardService {
                 if (user != null) {
                     name = user.getRealName();
                     if (user.getAvatarFileId() != null) avatar = "/api/file/download/" + user.getAvatarFileId();
-                    if (user.getMajorId() != null) {
-                        Major major = majorMapper.selectById(user.getMajorId());
-                        if (major != null && major.getSchoolId() != null) {
-                            School school = schoolMapper.selectById(major.getSchoolId());
-                            if (school != null) org = school.getSchoolName();
-                        }
-                    }
                     if (isAdmin) {
                         RankItemVO.MemberInfo info = new RankItemVO.MemberInfo();
                         info.setName(user.getRealName());
@@ -1343,6 +1618,7 @@ public class ExternalBoardService {
                 }
                 v.setIsStar("star".equalsIgnoreCase(s.getType()) || (s.getIsRanking() != null && s.getIsRanking() == 0));
                 v.setGroup(s.getType());
+                v.setAdvisor(s.getAdvisor());
                 v.setName(name);
                 v.setOrganization(org);
                 v.setAvatar(avatar);

@@ -1,5 +1,14 @@
 export type BoardParticipantFilter = 'all' | 'official' | 'star' | 'girl';
 
+export const getBoardParticipantKind = (row: { isStar?: boolean; isGirl?: boolean; group?: string; rank?: number }) =>
+  row.isStar || row.group === 'star' || row.rank === -1 ? 'star' : row.isGirl || row.group === 'girl' ? 'girl' : 'official';
+
+export const compareBoardRank = (a: { rank?: number }, b: { rank?: number }) => {
+  const left = a.rank != null && a.rank > 0 ? a.rank : Infinity;
+  const right = b.rank != null && b.rank > 0 ? b.rank : Infinity;
+  return left === right ? 0 : left < right ? -1 : 1;
+};
+
 export const matchesBoardParticipantType = (
   participant: { isStar?: boolean; isGirl?: boolean },
   filter: BoardParticipantFilter
@@ -25,7 +34,7 @@ export interface BoardDisplayRowMeta {
   isPinned: boolean;
 }
 
-export const buildBoardDisplayRows = <T extends { itemId: number }>(
+export const buildBoardDisplayRows = <T extends { itemId: number; rank?: number }>(
   rows: readonly T[],
   selectedIds: readonly number[]
 ): (T & BoardDisplayRowMeta)[] => {
@@ -41,5 +50,6 @@ export const buildBoardDisplayRows = <T extends { itemId: number }>(
     const row = rowsById.get(itemId);
     if (row) pinnedRows.push({ ...row, boardRowKey: `pinned-${itemId}`, isPinned: true });
   }
+  pinnedRows.sort((a, b) => compareBoardRank(a, b) || a.boardPosition - b.boardPosition);
   return [...pinnedRows, ...rankedRows];
 };

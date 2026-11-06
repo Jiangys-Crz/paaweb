@@ -1,5 +1,8 @@
 package com.cwnupaa.backend.controller;
 
+import com.cwnupaa.backend.utils.AdvisorNames;
+import com.cwnupaa.backend.service.ExternalBoardService;
+
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cwnupaa.backend.common.Result;
@@ -30,6 +33,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
@@ -63,6 +67,7 @@ public class EventController {
     private EmailService emailService;
     @Autowired private EventSignupNotificationService signupNotifications;
     @Autowired private EventSignupPolicy signupPolicy;
+    @Autowired private ExternalBoardService externalBoards;
     @Autowired private SignupTeamIdentityService signupTeamIdentity;
     @Autowired private SignupCredentialService signupCredentials;
     @Autowired
@@ -351,7 +356,7 @@ public class EventController {
         if (userId == null) return Result.error("未登录或会话已失效");
         Long teamId = params.get("teamId") != null ? Long.valueOf(params.get("teamId").toString()) : null;
         Integer isRanking = params.get("isRanking") != null ? Integer.valueOf(params.get("isRanking").toString()) : 1;
-        String advisor = params.get("advisor") != null ? params.get("advisor").toString() : null;
+        String advisor = AdvisorNames.normalize(params.get("advisor"));
         String inputType = null;
         if (params.get("teamType") != null) inputType = params.get("teamType").toString();
         else if (params.get("type") != null) inputType = params.get("type").toString();
@@ -508,7 +513,7 @@ public class EventController {
         Long teamId = params.get("teamId") != null ? Long.valueOf(params.get("teamId").toString()) : null;
 
         Integer isRanking = params.get("isRanking") != null ? Integer.valueOf(params.get("isRanking").toString()) : 1;
-        String advisor = params.get("advisor") != null ? params.get("advisor").toString() : null;
+        String advisor = AdvisorNames.normalize(params.get("advisor"));
 
         String inputType = null;
         if (params.get("teamType") != null) inputType = params.get("teamType").toString();
@@ -701,7 +706,7 @@ public class EventController {
         if (event == null) return Result.error("赛事不存在");
 
         LocalDateTime now = LocalDateTime.now();
-        if (!now.isBefore(event.getSignupEnd())) {
+        if (signupPolicy.isCancellationClosed(event, now)) {
             return Result.error("报名已结束，无法取消报名");
         }
 
@@ -739,6 +744,7 @@ public class EventController {
         size = SecurityUtils.clampPageSize(size);
         Page<EventSignupVO> resultPage = new Page<>(current, size);
         List<EventSignupVO> voList = new ArrayList<>();
+        Map<EventSignupVO, Long> organizationUsers = new LinkedHashMap<>();
 
         if (event.getIsTeam() == 0) {
             Page<SignupPersonal> pageParam = new Page<>(current, size);
@@ -757,6 +763,7 @@ public class EventController {
                 vo.setAdvisor(sp.getAdvisor());
                 vo.setIsRanking(sp.getIsRanking());
                 fillUserSchoolInfo(vo, u);
+                organizationUsers.put(vo, sp.getUserId());
                 voList.add(vo);
             }
         } else {
@@ -777,6 +784,7 @@ public class EventController {
                 // 获取队长信息以填充学院
                 Users leader = members.isEmpty() ? null : members.get(0);
                 fillUserSchoolInfo(vo, leader);
+                if (leader != null) organizationUsers.put(vo, leader.getUserId());
 
                 // 获取成员名单
                 String names = members.stream().map(Users::getRealName).collect(Collectors.joining(", "));
@@ -785,6 +793,7 @@ public class EventController {
                 voList.add(vo);
             }
         }
+        externalBoards.enrichSignupOrganizations(eventId, organizationUsers);
         resultPage.setRecords(voList);
         return Result.success(resultPage);
     }
@@ -910,6 +919,8 @@ public class EventController {
 
         Event event = eventMapper.selectForSignupUpdate(eventId);
         if (event == null) return Result.error("赛事不存在");
+        if ("cancelled".equals(status) && signupPolicy.isCancellationClosed(event, LocalDateTime.now()))
+            return Result.error("报名已结束，无法取消报名");
 
         Set<Long> uniqueSignupIds = new LinkedHashSet<>(ids);
         List<SignupPersonal> personal = event.getIsTeam() == 0
@@ -1362,11 +1373,26 @@ public class EventController {
     }
 
     @GetMapping("/admin/export")
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public void exportSignups(@RequestParam Long eventId, @RequestParam(defaultValue = "summary") String viewType, @RequestParam(required = false) String keyword, @RequestParam(required = false) String status, @RequestParam(required = false) String teamType, HttpServletResponse response) {
         try {
             Event event = eventMapper.selectById(eventId);
-            Result<Page<EventSignupVO>> result = listSignups(eventId, 1, 100000, keyword, status, teamType, viewType);
-            List<EventSignupVO> list = result.getData().getRecords();
+            if (event == null) {
+                response.sendError(HttpServletResponse.SC_NOT_FOUND, "赛事不存在");
+                return;
+            }
+            List<EventSignupVO> list = new ArrayList<>();
+            for (int current = 1; ; current++) {
+                Result<Page<EventSignupVO>> result = listSignups(eventId, current, 100, keyword, status, teamType, viewType);
+                if (result.getCode() != 200 || result.getData() == null) {
+                    throw new IllegalStateException("读取报名名单失败");
+                }
+                Page<EventSignupVO> page = result.getData();
+                list.addAll(page.getRecords());
+                // Team detail pages expand each signup into multiple member rows.
+                // Advance by signup pages, not the number of exported member rows.
+                if (current >= page.getPages()) break;
+            }
             Workbook workbook = new XSSFWorkbook();
             Sheet sheet = workbook.createSheet("报名名单");
             List<String> headerList = new ArrayList<>();

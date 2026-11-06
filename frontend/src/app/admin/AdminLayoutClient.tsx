@@ -227,6 +227,7 @@ const AdminLayoutClient = ({ children }: { children: React.ReactNode }) => {
 
     const orgItems: MenuItem[] = [];
     if (hasPerm('manage_org')) orgItems.push(getItem('架构管理', '/admin/org'));
+    if (isSuperAdmin) orgItems.push(getItem('组织信息管理', '/admin/org/info'));
     if (hasPerm('manage_term')) orgItems.push(getItem('学期设置', '/admin/term'));
     if (orgItems.length > 0) items.push(getItem('组织管理', 'organization-management', <ApartmentOutlined />, orgItems));
 
@@ -263,6 +264,7 @@ const AdminLayoutClient = ({ children }: { children: React.ReactNode }) => {
     if (path.startsWith('/admin/app-key')) return hasPerm('manage_api');
     if (path.startsWith('/admin/bulk-email')) return isSuperAdmin;
     if (path.startsWith('/admin/certificate-grant')) return hasPerm('manage_cert_grant');
+    if (path.startsWith('/admin/org/info')) return isSuperAdmin;
     if (path.startsWith('/admin/org')) return hasPerm('manage_org');
     if (path.startsWith('/admin/term')) return hasPerm('manage_term');
     if (path.startsWith('/admin/permissions')) return hasPerm('manage_permission');
@@ -334,6 +336,7 @@ const AdminLayoutClient = ({ children }: { children: React.ReactNode }) => {
     '/admin/oj-accounts': 'OJ账号管理',
     '/admin/auth-audit': '实名认证',
     '/admin/org': '学院管理',
+    '/admin/org/info': '组织信息管理',
     '/admin/term': '学期设置',
     '/admin/app-key': '接口授权管理',
     '/admin/bulk-email': '批量邮件',
@@ -374,7 +377,7 @@ const AdminLayoutClient = ({ children }: { children: React.ReactNode }) => {
     if (['/admin/notice', '/admin/training', '/admin/contest/category', '/admin/contest', '/admin/bulk-email'].includes(selectedRoute)) return { label: '内容发布', href: selectedRoute };
     if (['/admin/data-panel', '/admin/auth-audit', '/admin/users', '/admin/oj-accounts', '/admin/roles', '/admin/permissions'].includes(selectedRoute)) return { label: '用户管理', href: selectedRoute };
     if (selectedRoute.startsWith('/admin/certificate')) return { label: '证书管理', href: selectedRoute };
-    if (['/admin/org', '/admin/term'].includes(selectedRoute)) return { label: '组织管理', href: selectedRoute };
+    if (['/admin/org', '/admin/org/info', '/admin/term'].includes(selectedRoute)) return { label: '组织管理', href: selectedRoute };
     return null;
   })();
   const actionLabel = location.pathname.includes('/edit/') ? '编辑'

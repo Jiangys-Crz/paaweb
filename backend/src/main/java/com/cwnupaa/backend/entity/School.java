@@ -10,6 +10,10 @@ public class School {
     private Long schoolId;
     private Long universityId;
     private String schoolName;
+    private Long logoFileId;
+
+    public Long getLogoFileId() { return logoFileId; }
+    public void setLogoFileId(Long logoFileId) { this.logoFileId = logoFileId; }
 
     public Long getSchoolId() {
         return schoolId;

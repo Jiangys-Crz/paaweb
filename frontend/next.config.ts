@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   output: "standalone",
+  experimental: {
+    // The resolver photo archive can be up to 512 MB. Next clones rewrite
+    // bodies, and its default 10 MB limit silently truncates larger uploads.
+    proxyClientMaxBodySize: "513mb",
+    proxyTimeout: 600_000,
+  },
   async headers() {
     return [
       {

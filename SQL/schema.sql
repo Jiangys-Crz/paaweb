@@ -1714,3 +1714,35 @@ ALTER TABLE ONLY public.rating_month_log
 
 ALTER TABLE ONLY public.user_account_legacy_alias
     ADD CONSTRAINT user_account_legacy_alias_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(user_id) ON DELETE CASCADE;
+
+-- External board resolver, photo and organization fields.
+
+-- migration_external_board_resolver.sql
+-- Run before deploying the backend. Existing boards remain disabled.
+ALTER TABLE public.external_board ADD COLUMN IF NOT EXISTS resolver_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE public.external_board ADD COLUMN IF NOT EXISTS resolver_password_hash TEXT;
+
+-- migration_external_board_photos.sql
+BEGIN;
+CREATE TABLE IF NOT EXISTS public.external_board_photo (
+    board_id BIGINT NOT NULL REFERENCES public.external_board(board_id) ON DELETE CASCADE,
+    participant_id BIGINT NOT NULL CHECK (participant_id >= 0),
+    photo_key VARCHAR(36) NOT NULL UNIQUE,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (board_id, participant_id)
+);
+COMMIT;
+
+-- migration_organization_logos.sql
+-- Organization logos and per-board display mode. Run before deploying the backend.
+ALTER TABLE public.school ADD COLUMN IF NOT EXISTS logo_file_id BIGINT REFERENCES public.file_system(file_id) ON DELETE SET NULL;
+ALTER TABLE public.external_board ADD COLUMN IF NOT EXISTS organization_display VARCHAR(16) NOT NULL DEFAULT 'school';
+
+-- migration_resolver_playback.sql
+-- Playback preferences are per external board; existing boards default to single-step.
+ALTER TABLE public.external_board ADD COLUMN IF NOT EXISTS resolver_single_step BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE public.external_board ADD COLUMN IF NOT EXISTS resolver_speed DOUBLE PRECISION NOT NULL DEFAULT 1.0 CHECK (resolver_speed >= 0.25 AND resolver_speed <= 4.0);
+
+-- migration_resolver_settings.sql
+-- Awards and display preferences for the official resolver, isolated per external board.
+ALTER TABLE public.external_board ADD COLUMN IF NOT EXISTS resolver_settings TEXT;

@@ -41,6 +41,8 @@ RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
 COPY --from=builder /app/public ./public
+# Keep the same bundled font available to the container and browser.
+COPY --from=builder /app/public/fonts /usr/local/share/fonts/cwnupaa-resolver
 
 # 设置预渲染缓存目录的正确权限
 RUN mkdir .next

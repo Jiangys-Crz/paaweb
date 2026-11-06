@@ -181,59 +181,25 @@
   min-height: 38px;
 }
 
-.table :global(.ant-table) {
-  color: #4c6175;
+.cardRegion {
+  min-height: 180px;
+  padding-block: 2px 18px;
 }
 
-.table :global(.ant-table-container) {
-  overflow: hidden;
-  border: 1px solid #e9eff6;
-  border-radius: 12px;
+.cardRegion .cardGrid {
+  grid-template-columns: repeat(auto-fill, minmax(min(250px, 100%), 1fr));
 }
 
-.table :global(.ant-table-thead > tr > th) {
-  padding-block: 15px;
-  border-bottom-color: #e3ebf4;
-  background: #f1f6fc;
-  color: #415e7b;
+.cardExtra {
+  color: #64748b;
   font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
 }
 
-.table :global(.ant-table-tbody > tr > td) {
-  padding-block: 18px;
-  border-bottom-color: #edf2f7;
-  overflow-wrap: anywhere;
-}
-
-.table :global(.ant-table-tbody > tr:nth-child(even) > td) {
-  background: #fbfdff;
-}
-
-.table :global(.ant-table-tbody > tr:hover > td) {
-  background: #f0f7ff;
-}
-
-.rowIndex {
-  color: #778b9e;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.primaryText {
-  color: #243e58;
-  font-weight: 600;
-}
-
-.members {
-  white-space: pre-wrap;
-  line-height: 1.8;
-}
-
-.rankingTag {
-  margin-inline-end: 0;
-  border-radius: 5px;
+.pagination {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  row-gap: 12px;
 }
 
 .footerNote {
@@ -287,11 +253,11 @@
     flex: 1;
   }
 
-  .table :global(.ant-pagination) {
+  .pagination {
     row-gap: 12px;
   }
 
-  .table :global(.ant-pagination-total-text) {
+  .pagination :global(.ant-pagination-total-text) {
     width: 100%;
     margin-inline-end: 0;
     text-align: center;

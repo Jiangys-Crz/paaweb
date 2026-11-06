@@ -174,6 +174,7 @@ class CertificateTemplatePersistenceTests {
     private void legacyPublicContent() {
         jdbc.update("UPDATE file_system SET access_purpose='GENERAL' WHERE file_id=90");
         jdbc.execute("CREATE TABLE university (logo_file_id BIGINT)");
+        jdbc.execute("CREATE TABLE school (logo_file_id BIGINT)");
         jdbc.execute("CREATE TABLE file_relation (file_id BIGINT, biz_type VARCHAR(50))");
         jdbc.execute("CREATE TABLE sys_intro (category VARCHAR(50), content TEXT)");
         jdbc.execute("CREATE TABLE notice (cover_file_id BIGINT, content TEXT)");

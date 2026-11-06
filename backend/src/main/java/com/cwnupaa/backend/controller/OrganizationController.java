@@ -1,6 +1,12 @@
 package com.cwnupaa.backend.controller;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.cwnupaa.backend.service.FileAccessPolicy;
+import com.cwnupaa.backend.utils.SecurityUtils;
+import com.cwnupaa.backend.vo.UserProfileVO;
+import jakarta.servlet.http.HttpServletRequest;
+import java.util.Objects;
 import com.cwnupaa.backend.common.Result;
 import com.cwnupaa.backend.entity.Major;
 import com.cwnupaa.backend.entity.School;
@@ -27,6 +33,7 @@ public class OrganizationController {
 
     @Autowired
     private UniversityMapper universityMapper;
+    @Autowired private FileAccessPolicy fileAccessPolicy;
     @Autowired
     private SchoolMapper schoolMapper;
     @Autowired
@@ -34,9 +41,45 @@ public class OrganizationController {
     @Autowired
     private TermMapper termMapper;
 
+    private boolean canManageLogos(HttpServletRequest request) {
+        UserProfileVO user = SecurityUtils.currentUser(request);
+        return user != null && "normal".equals(user.getAccountStatus())
+                && ("super_admin".equals(user.getRole()) || "supper_admin".equals(user.getRole()));
+    }
+
+    @GetMapping("/info")
+    public Result<Map<String, Object>> organizationInfo(HttpServletRequest request) {
+        if (!canManageLogos(request)) return Result.error(403, "仅超级管理员可管理组织标识");
+        Map<String, Object> data = new HashMap<>();
+        data.put("universities", universityMapper.selectList(new QueryWrapper<University>().orderByAsc("university_name")));
+        data.put("schools", schoolMapper.selectList(new QueryWrapper<School>().orderByAsc("school_name")));
+        return Result.success(data);
+    }
+
+    @PostMapping("/info/{kind}/{id}/logo")
+    @Transactional(rollbackFor = Exception.class)
+    public Result<String> updateOrganizationLogo(@PathVariable String kind, @PathVariable Long id,
+                                                 @RequestBody Map<String, Long> payload, HttpServletRequest request) {
+        if (!canManageLogos(request)) return Result.error(403, "仅超级管理员可管理组织标识");
+        if (!payload.containsKey("logoFileId")) return Result.error("缺少 LOGO 参数");
+        Long logoId = payload.get("logoFileId");
+        if (!"university".equals(kind) && !"school".equals(kind)) return Result.error("组织类型不正确");
+        University university = "university".equals(kind) ? universityMapper.selectById(id) : null;
+        School school = "school".equals(kind) ? schoolMapper.selectById(id) : null;
+        if (university == null && school == null) return Result.error("组织不存在");
+        String error = fileAccessPolicy.validatePublicFile(logoId, SecurityUtils.currentUser(request), true);
+        if (error != null) return Result.error(error);
+        Long previous = university != null ? university.getLogoFileId() : school.getLogoFileId();
+        if (university != null) universityMapper.update(null, new UpdateWrapper<University>().eq("university_id", id).set("logo_file_id", logoId));
+        else schoolMapper.update(null, new UpdateWrapper<School>().eq("school_id", id).set("logo_file_id", logoId));
+        if (!Objects.equals(previous, logoId)) fileAccessPolicy.deleteIfUnreferenced(previous, SecurityUtils.currentUser(request));
+        return Result.success("保存成功");
+    }
+
     @PostMapping("/university/save")
     public Result<String> saveUniversity(@RequestBody University university) {
         if (university == null || !StringUtils.hasText(university.getUniversityName())) return Result.error("学校名称不能为空");
+        university.setLogoFileId(null); // Logos are changed only through the validated logo endpoint.
         university.setUniversityName(university.getUniversityName().trim());
         if (university.getUniversityName().length() > 100) return Result.error("学校名称不能超过100字");
         if (university.getUniversityId() == null) {
@@ -62,6 +105,7 @@ public class OrganizationController {
     public Result<String> saveSchool(@RequestBody School school) {
         if (school == null || school.getUniversityId() == null) return Result.error("所属学校不能为空");
         if (!StringUtils.hasText(school.getSchoolName())) return Result.error("学院名称不能为空");
+        school.setLogoFileId(null); // Logos are changed only through the validated logo endpoint.
         school.setSchoolName(school.getSchoolName().trim());
         if (school.getSchoolName().length() > 100) return Result.error("学院名称不能超过100字");
         if (school.getSchoolId() == null) {

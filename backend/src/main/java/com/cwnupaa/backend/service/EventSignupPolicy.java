@@ -6,6 +6,7 @@ import com.cwnupaa.backend.mapper.*;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 /** Call under the event row lock; pending applications do not reserve approved places. */
 @Service
@@ -24,6 +25,11 @@ public class EventSignupPolicy {
 
     public boolean exceedsCapacity(Event event, long proposedApprovedCount) {
         return event.getMaxSignup() != null && proposedApprovedCount > event.getMaxSignup();
+    }
+
+    /** Use the locked event's deadline; the exact cutoff is already closed. */
+    public boolean isCancellationClosed(Event event, LocalDateTime now) {
+        return event.getSignupEnd() == null || !now.isBefore(event.getSignupEnd());
     }
 
     public String memberConflict(Long eventId, List<Long> memberIds, Long personalId, Long teamId) {

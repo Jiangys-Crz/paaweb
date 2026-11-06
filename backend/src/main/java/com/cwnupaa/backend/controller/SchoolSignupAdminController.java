@@ -1,5 +1,7 @@
 package com.cwnupaa.backend.controller;
 
+import com.cwnupaa.backend.utils.AdvisorNames;
+
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.cwnupaa.backend.common.Result;
@@ -635,7 +637,7 @@ public class SchoolSignupAdminController {
         if (!now.isBefore(event.getSignupEnd())) return Result.error("报名已截止");
 
         Integer isRanking = params.get("isRanking") == null ? 1 : Integer.valueOf(params.get("isRanking").toString());
-        String advisor = params.get("advisor") == null ? null : params.get("advisor").toString();
+        String advisor = AdvisorNames.normalize(params.get("advisor"));
         String teamType = params.get("teamType") == null ? null : params.get("teamType").toString();
 
         List<String> failures = new ArrayList<>();
@@ -680,6 +682,8 @@ public class SchoolSignupAdminController {
         Long eventId = Long.valueOf(params.get("eventId").toString());
         Event event = eventMapper.selectForSignupUpdate(eventId);
         if (event == null) return Result.error("赛事不存在");
+        if (signupPolicy.isCancellationClosed(event, LocalDateTime.now()))
+            return Result.error("报名已结束，无法取消报名");
         List<Long> signupIds = parseLongList(params.get("signupIds"));
         if (signupIds.isEmpty()) return Result.error("请选择报名记录");
 

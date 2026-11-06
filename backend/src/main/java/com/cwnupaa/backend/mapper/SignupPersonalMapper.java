@@ -24,7 +24,7 @@ public interface SignupPersonalMapper extends BaseMapper<SignupPersonal> {
             "  </choose>" +
             "</if>" +
             "<if test='keyword != null and keyword != \"\"'> AND (u.real_name LIKE CONCAT('%', #{keyword}, '%') OR u.number_id LIKE CONCAT('%', #{keyword}, '%')) </if>" +
-            "ORDER BY s.signup_time DESC" +
+            "ORDER BY s.signup_time DESC, s.signup_id DESC" +
             "</script>")
     Page<SignupPersonal> selectSignupPage(Page<SignupPersonal> page, @Param("eventId") Long eventId, @Param("status") String status, @Param("teamType") String teamType, @Param("keyword") String keyword);
 

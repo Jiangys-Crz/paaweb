@@ -19,6 +19,8 @@ public class ExternalBoardController {
 
     @Autowired
     private ExternalBoardService externalBoardService;
+    @Autowired
+    private com.cwnupaa.backend.service.ResolverPhotoService resolverPhotoService;
 
     @GetMapping("/list")
     public Result<List<ExternalBoardSummaryVO>> listPublic(@RequestParam(required = false) String keyword) {
@@ -53,6 +55,49 @@ public class ExternalBoardController {
                                           @RequestParam(required = false) String group,
                                           @RequestAttribute(value = "user", required = false) UserProfileVO currentUser) {
         return Result.success(externalBoardService.getBoardDetail(boardId, timePoint, scope, group, currentUser));
+    }
+
+    public record ResolverRequest(String password) {}
+
+    @PostMapping("/{boardId}/resolver")
+    public org.springframework.http.ResponseEntity<Result<Map<String, Object>>> resolver(
+            @PathVariable Long boardId, @RequestBody(required = false) ResolverRequest request, jakarta.servlet.http.HttpServletRequest httpRequest) {
+        var result = externalBoardService.resolveBoard(boardId, request == null ? null : request.password(), httpRequest.getRemoteAddr());
+        return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore()).body(Result.success(result));
+    }
+
+    @GetMapping("/admin/{boardId}/resolver/participants")
+    public org.springframework.http.ResponseEntity<Result<Map<String,Object>>> resolverParticipants(@PathVariable Long boardId,
+            @RequestAttribute(value = "user", required = false) UserProfileVO currentUser) {
+        return org.springframework.http.ResponseEntity.ok().cacheControl(org.springframework.http.CacheControl.noStore())
+                .body(Result.success(externalBoardService.resolverParticipants(boardId, currentUser)));
+    }
+
+    @GetMapping("/admin/{boardId}/resolver/photos")
+    public Result<Map<String,Object>> photoStatus(@PathVariable Long boardId) { return Result.success(resolverPhotoService.status(boardId)); }
+
+    @PostMapping("/admin/{boardId}/resolver/photos")
+    public Result<Map<String,Object>> uploadPhotos(@PathVariable Long boardId, @RequestPart("file") org.springframework.web.multipart.MultipartFile file,
+            @RequestParam(defaultValue="false") boolean cover,
+            @RequestParam(defaultValue="false") boolean defaultPhoto) throws java.io.IOException {
+        // Accept old clients' parameter while storing its image as an opening cover.
+        return Result.success(resolverPhotoService.upload(boardId,file,cover || defaultPhoto));
+    }
+
+    @DeleteMapping("/admin/{boardId}/resolver/cover")
+    public Result<String> removeResolverCover(@PathVariable Long boardId) {
+        resolverPhotoService.removeCover(boardId);
+        return Result.success("滚榜封面已移除");
+    }
+
+    @GetMapping("/{boardId}/resolver/photos/{key}")
+    public org.springframework.http.ResponseEntity<org.springframework.core.io.Resource> photo(@PathVariable Long boardId, @PathVariable String key,
+            @RequestParam(defaultValue="false") boolean thumbnail) {
+        var file=resolverPhotoService.photo(boardId,key,thumbnail);
+        var mediaType = file.getFileName().toString().endsWith(".png") ? org.springframework.http.MediaType.IMAGE_PNG : org.springframework.http.MediaType.IMAGE_JPEG;
+        return org.springframework.http.ResponseEntity.ok().contentType(mediaType)
+                .cacheControl(org.springframework.http.CacheControl.maxAge(java.time.Duration.ofDays(30)).cachePublic().immutable())
+                .body(new org.springframework.core.io.FileSystemResource(file));
     }
 
     @GetMapping("/{boardId}/stats")

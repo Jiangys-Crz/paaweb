@@ -4311,3 +4311,18 @@ body:has(.rank-container)::-webkit-scrollbar,
 .board-desktop-modal .ant-modal {
   transform-origin: top center !important;
 }
+
+/* Contest information shown before the start. */
+.board-countdown { text-align: center; color: #6b7280; margin: 26px 0 30px; }
+.board-countdown-units { display: flex; justify-content: center; gap: 10px; margin-top: 10px; }
+.board-countdown-unit { min-width: 104px; padding: 12px 16px; color: white; background: #bfc1c4; border-radius: 3px; }
+.board-countdown-unit strong { display: block; font-size: 48px; font-weight: 400; line-height: 1.2; }
+.board-countdown-unit span { display: block; margin-top: 6px; }
+.board-participant-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
+.board-participant-card { position:relative; isolation:isolate; overflow:hidden; border: 1px solid #e1e4e9; padding: 16px; border-radius: 3px; line-height: 1.8; background: #fff; }
+.board-participant-card>.board-participant-watermark { right:10px; top:10px; width:84px; height:84px; opacity:.12; transform:none; z-index:0; }
+.board-participant-card-foreground { position:relative; z-index:1; }
+.board-participant-card-heading { display:flex; align-items:center; gap:5px; min-width:0; }
+.board-participant-card-heading strong { min-width:0; overflow-wrap:anywhere; }
+.board-participant-card strong { display: block; color: #111827; font-size: 18px; }
+.board-participant-org { color: #64748b; }

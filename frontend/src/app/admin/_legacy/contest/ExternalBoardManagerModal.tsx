@@ -21,6 +21,7 @@ export default function ExternalBoardManagerModal({ open, eventId, eventName, ev
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [configMode, setConfigMode] = useState<'board' | 'resolver'>('board');
   const [error, setError] = useState('');
   const [form] = Form.useForm<{ name: string }>();
 
@@ -61,6 +62,7 @@ export default function ExternalBoardManagerModal({ open, eventId, eventName, ev
       setCreating(false);
       form.resetFields();
       await refresh();
+      setConfigMode('board');
       setEditingId(res.data.data.boardId);
       message.success('外榜已创建，可继续配置');
     } catch (error) {
@@ -84,7 +86,7 @@ export default function ExternalBoardManagerModal({ open, eventId, eventName, ev
   return (
     <>
       <Modal title={`${eventName} · 外榜管理`} open={open} onCancel={onCancel} footer={<Button onClick={onCancel}>关闭</Button>} width={860} destroyOnHidden>
-        <Alert type="info" showIcon title="同一个比赛可添加多个外榜，分别设置名称、开放状态、时间和题目。推送时请使用对应的外榜 ID。" style={{ marginBottom: 16 }} />
+        <Alert type="info" showIcon title="同一个比赛可添加多个外榜，分别设置场次、开放状态、时间和题目。推送时请使用对应的外榜 ID。" style={{ marginBottom: 16 }} />
         {error && <Alert type="error" showIcon title={error} style={{ marginBottom: 16 }} />}
         <Space style={{ marginBottom: 16 }}>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreating(true)}>添加外榜</Button>
@@ -94,10 +96,11 @@ export default function ExternalBoardManagerModal({ open, eventId, eventName, ev
           rowKey="boardId" dataSource={boards} loading={loading} pagination={false} scroll={{ x: 680 }}
           columns={[
             { title: '外榜 ID', dataIndex: 'boardId', width: 100 },
-            { title: '外榜名称', dataIndex: 'name' },
+            { title: '外榜场次', dataIndex: 'name' },
             { title: '状态', dataIndex: 'externalOpen', width: 100, render: value => <Tag color={value ? 'green' : 'default'}>{value ? '已开放' : '未开放'}</Tag> },
-            { title: '操作', width: 230, render: (_, board) => <Space>
-              <Button icon={<EditOutlined />} size="small" onClick={() => setEditingId(board.boardId)}>配置 / 改名</Button>
+            { title: '操作', width: eventType === 'XCPC' ? 310 : 220, render: (_, board) => <Space wrap>
+              <Button icon={<EditOutlined />} size="small" onClick={() => { setConfigMode('board'); setEditingId(board.boardId); }}>外榜配置</Button>
+              {eventType === 'XCPC' && <Button size="small" onClick={() => { setConfigMode('resolver'); setEditingId(board.boardId); }}>滚榜配置</Button>}
               <Popconfirm title={`删除外榜“${board.name}”？`} description="将同时删除该外榜的题目和提交记录，无法恢复。比赛和其他外榜不受影响。" okText="删除" cancelText="取消" okButtonProps={{ danger: true }} onConfirm={() => remove(board.boardId)}>
                 <Button danger size="small" icon={<DeleteOutlined />}>删除</Button>
               </Popconfirm>
@@ -108,12 +111,12 @@ export default function ExternalBoardManagerModal({ open, eventId, eventName, ev
       </Modal>
       <Modal title="添加外榜" open={creating} onCancel={() => { setCreating(false); form.resetFields(); }} onOk={add} confirmLoading={saving} okText="创建" cancelText="取消">
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="外榜名称" rules={[{ required: true, whitespace: true, message: '请输入外榜名称' }, { max: 200 }]}>
-            <Input maxLength={200} placeholder="例如：正式榜、热身赛榜" onPressEnter={add} />
+          <Form.Item name="name" label="外榜场次" rules={[{ required: true, whitespace: true, message: '请输入外榜场次' }, { max: 200 }]}>
+            <Input maxLength={200} placeholder="例如：正式赛、热身赛或其他场次" onPressEnter={add} />
           </Form.Item>
         </Form>
       </Modal>
-      {editingId !== null && <ExternalBoardConfigModal open boardId={editingId} eventId={eventId} eventType={eventType} onCancel={() => { setEditingId(null); void refresh(); }} />}
+      {editingId !== null && <ExternalBoardConfigModal key={`${editingId}-${configMode}`} open mode={configMode} boardId={editingId} eventId={eventId} eventType={eventType} onCancel={() => { setEditingId(null); void refresh(); }} />}
     </>
   );
 }

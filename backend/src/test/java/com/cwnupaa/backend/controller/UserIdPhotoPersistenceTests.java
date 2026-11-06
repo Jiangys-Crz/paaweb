@@ -240,6 +240,7 @@ class UserIdPhotoPersistenceTests {
                 "CREATE TABLE audit_records (file_id BIGINT, biz_type VARCHAR(50))",
                 "CREATE TABLE file_relation (file_id BIGINT, biz_type VARCHAR(50))",
                 "CREATE TABLE university (logo_file_id BIGINT)",
+                "CREATE TABLE school (logo_file_id BIGINT)",
                 "CREATE TABLE contest_category (logo_file_id BIGINT, intro TEXT)",
                 "CREATE TABLE notice (cover_file_id BIGINT, content TEXT)",
                 "CREATE TABLE association_member (avatar_file_id BIGINT, introduction TEXT)",

@@ -6,6 +6,7 @@ export type DetailSeoConfig = {
   endpoint: string;
   fallbackTitle: string;
   titleKeys: string[];
+  titleFormatter?: (detail: DetailRecord | null) => string;
   contentKeys: string[];
   typeLabel: string;
 };
@@ -37,6 +38,8 @@ export async function fetchDetailForSeo(config: DetailSeoConfig): Promise<Detail
 }
 
 export function pickDetailTitle(detail: DetailRecord | null, config: DetailSeoConfig) {
+  const formatted = config.titleFormatter?.(detail);
+  if (formatted?.trim()) return formatted.trim();
   for (const key of config.titleKeys) {
     const value = asText(detail?.[key]);
     if (value.trim()) return value.trim();

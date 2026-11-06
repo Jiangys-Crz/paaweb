@@ -113,13 +113,19 @@ class ExternalBoardSubmissionOrderingTests {
             var params = query.getParamNameValuePairs().values();
             if (!params.contains(7L)) return List.of();
             LocalDateTime replay = params.stream().filter(LocalDateTime.class::isInstance)
-                    .map(LocalDateTime.class::cast).findFirst().orElse(start.plusHours(5));
+                    .map(LocalDateTime.class::cast).filter(t -> t.isAfter(start)).min(LocalDateTime::compareTo).orElse(start.plusHours(5));
             return records.stream().filter(record -> !record.getSubmitTime().isAfter(replay)).toList();
         });
 
         boolean teamRows = "team".equals(scope);
         long offset = teamRows ? 0 : 100;
-        List<RankItemVO> rows = service.getBoardDetail(7L, null, scope, null, null).getRows();
+        var board = service.getBoardDetail(7L, null, scope, null, null);
+        List<RankItemVO> rows = board.getRows();
+        if ("XCPC".equals(type)) {
+            // An AC after the freeze must not appear in public problem aggregates.
+            assertThat(board.getProblems().get(0).getAccepted()).isEqualTo(2);
+            assertThat(board.getProblems().get(0).getSubmitted()).isEqualTo(4);
+        }
         assertThat(rows).hasSize(6);
         assertThat(rows.subList(0, 2)).extracting(RankItemVO::getItemId).containsExactly(offset + 5, offset + 6);
         assertThat(rows.get(5).getItemId()).isEqualTo(offset + 1);

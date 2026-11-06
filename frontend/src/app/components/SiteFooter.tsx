@@ -9,6 +9,15 @@ const links = [
 ];
 
 export default function SiteFooter() {
+  let vpLink: { label: string; href: string }[] = [];
+  try {
+    const url = new URL(process.env.PUBLIC_VP_SITE_URL || '');
+    if (url.protocol === 'https:' || url.protocol === 'http:') {
+      vpLink = [{ label: 'VP系统', href: url.href }];
+    }
+  } catch {
+    // An unset optional integration does not add a footer link.
+  }
   return (
     <footer className="site-footer">
       <div className="site-footer-inner">
@@ -24,7 +33,7 @@ export default function SiteFooter() {
               <div className="site-footer-link-group">
                 <h2 className="site-footer-link-title">学习平台</h2>
                 <div className="site-footer-link-items">
-                  {links.map(({ label, href }) => (
+                  {[...links, ...vpLink].map(({ label, href }) => (
                     <a key={href} href={href} target="_blank" rel="noreferrer">{label}</a>
                   ))}
                 </div>

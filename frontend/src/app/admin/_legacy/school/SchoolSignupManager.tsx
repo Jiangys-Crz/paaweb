@@ -7,6 +7,7 @@ import { Alert, Button, Card, Form, Input, Modal, Popconfirm, Radio, Select, Spa
 import { ArrowLeftOutlined, ReloadOutlined, SearchOutlined, SendOutlined, StopOutlined, SyncOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
+import AdvisorInput, { advisorText } from '@/app/components/AdvisorInput';
 import { useNavigate, useParams } from '@/app/admin/_legacy/router';
 import { signupGroupText, signupSourceText, signupStatusText } from '@/utils/contestDisplay';
 
@@ -36,6 +37,14 @@ const SchoolSignupManager: React.FC = () => {
   const [teamOptions, setTeamOptions] = useState<any[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
+  const [now, setNow] = useState(() => dayjs());
+  const canCancel = !!eventInfo.eventId && !!eventInfo.signupEnd && now.isBefore(eventInfo.signupEnd);
+  const signupEnded = !!eventInfo.signupEnd && !now.isBefore(eventInfo.signupEnd);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(dayjs()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const fetchEvent = async () => {
     const res = await axios.get(`/api/event/detail/${eventId}`);
@@ -106,7 +115,7 @@ const SchoolSignupManager: React.FC = () => {
         teamIds: values.teamIds,
         teamType: values.teamType,
         isRanking: values.isRanking,
-        advisor: Array.isArray(values.advisor) ? values.advisor.join('、') : values.advisor
+        advisor: advisorText(values.advisor)
       };
       const res = await axios.post('/api/admin/school-signup/signup', payload);
       if (res.data.code === 200) {
@@ -126,6 +135,10 @@ const SchoolSignupManager: React.FC = () => {
   };
 
   const handleBatchAction = async (action: 'cancel' | 'reapply', ids?: React.Key[]) => {
+    if (action === 'cancel' && (!eventInfo.signupEnd || !dayjs().isBefore(eventInfo.signupEnd))) {
+      setNow(dayjs());
+      return message.warning('报名已结束，无法取消报名');
+    }
     const targetIds = (ids || selectedRowKeys).map(Number);
     if (!targetIds.length) return message.warning('请先选择报名记录');
     const url = action === 'cancel' ? '/api/admin/school-signup/cancel' : '/api/admin/school-signup/reapply';
@@ -196,8 +209,8 @@ const SchoolSignupManager: React.FC = () => {
         <Space size="small">
           {['rejected', 'cancelled'].includes(record.status) && <Button type="link" icon={<SyncOutlined />} onClick={() => handleBatchAction('reapply', [record.signupId])}>重报</Button>}
           {['approved', 'pending'].includes(record.status) && (
-            <Popconfirm title="确定取消该报名？" onConfirm={() => handleBatchAction('cancel', [record.signupId])}>
-              <Button type="link" danger icon={<StopOutlined />}>取消</Button>
+            <Popconfirm disabled={!canCancel} title="确定取消该报名？" onConfirm={() => handleBatchAction('cancel', [record.signupId])}>
+              <Button type="link" danger disabled={!canCancel} icon={<StopOutlined />}>{signupEnded ? '报名已结束' : '取消'}</Button>
             </Popconfirm>
           )}
         </Space>
@@ -219,6 +232,7 @@ const SchoolSignupManager: React.FC = () => {
         </Space>
       </div>
 
+      {signupEnded && <Alert type="warning" showIcon style={{ marginBottom: 16 }} message="报名已结束，无法取消报名，学校报名管理员也不能取消。" />}
       <Alert
         type="info"
         showIcon
@@ -249,7 +263,7 @@ const SchoolSignupManager: React.FC = () => {
             </Radio.Group>
           )}
           <Button disabled={!selectedRowKeys.length} onClick={() => handleBatchAction('reapply')}>批量重报</Button>
-          <Button danger disabled={!selectedRowKeys.length} onClick={() => handleBatchAction('cancel')}>批量取消</Button>
+          <Button danger disabled={!selectedRowKeys.length || !canCancel} onClick={() => handleBatchAction('cancel')}>批量取消</Button>
         </Space>
       </div>
 
@@ -285,7 +299,7 @@ const SchoolSignupManager: React.FC = () => {
             <Select options={typeOptions} />
           </Form.Item>
           <Form.Item name="advisor" label="指导老师">
-            <Select mode="tags" open={false} placeholder="输入后回车，可填写多位" />
+            <AdvisorInput />
           </Form.Item>
           <Form.Item name="isRanking" label="是否参与排名">
             <Radio.Group options={[{ value: 1, label: '是' }, { value: 0, label: '否' }]} />

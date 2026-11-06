@@ -26,4 +26,10 @@ public class ExternalBoard {
     @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss", timezone = "GMT+8")
     private LocalDateTime freezeTime;
     private String medalConfig;
+    private String organizationDisplay;
+    private Boolean resolverEnabled;
+    private Boolean resolverSingleStep;
+    private Double resolverSpeed;
+    private String resolverSettings;
+    private String resolverPasswordHash;
 }

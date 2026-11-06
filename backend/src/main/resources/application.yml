@@ -1,4 +1,5 @@
 server:
+  forward-headers-strategy: native
   port: 8080
   tomcat:
     threads:
@@ -55,8 +56,8 @@ spring:
         debug: false
   servlet:
     multipart:
-      max-file-size: 20MB
-      max-request-size: 21MB
+      max-file-size: 512MB
+      max-request-size: 513MB
 
 mybatis-plus:
   configuration:

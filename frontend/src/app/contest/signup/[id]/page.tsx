@@ -33,6 +33,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
+import AdvisorInput, { advisorText } from '@/app/components/AdvisorInput';
 import { readStoredUser } from '@/utils/auth';
 import { contestTypeText } from '@/utils/contestDisplay';
 import ActivityLayout from '../../ContestNav';
@@ -104,6 +105,12 @@ export default function SignupDetailPage() {
   const [previewData, setPreviewData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [now, setNow] = useState(() => dayjs());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(dayjs()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const refresh = async () => {
     const res = await axios.get(`/api/event/detail/${id}`);
@@ -121,13 +128,12 @@ export default function SignupDetailPage() {
 
   const status = useMemo(() => {
     if (!data) return null;
-    const now = dayjs();
     if (now.isBefore(data.signupStart)) return <Tag color="orange">报名未开始</Tag>;
     if (now.isBefore(data.signupEnd)) return <Tag color="green">报名进行中</Tag>;
     if (now.isBefore(data.eventStart)) return <Tag color="blue">等待开赛</Tag>;
     if (now.isBefore(data.eventEnd)) return <Tag color="red">正在比赛中</Tag>;
     return <Tag>已结束</Tag>;
-  }, [data]);
+  }, [data, now]);
 
   const openSignup = async () => {
     if (!user) return router.push('/login');
@@ -149,7 +155,7 @@ export default function SignupDetailPage() {
     if (data?.type === 'GPLT') teamType = values.gpltGroup;
     if (data?.type === 'LANQIAO') teamType = values.lanqiaoGroup;
     if (!['GPLT', 'LANQIAO'].includes(data?.type || '')) isRanking = ['official', 'girl'].includes(teamType) ? 1 : 0;
-    return { eventId: data?.eventId, userId: user?.userId, teamId: values.teamId, advisor: values.advisor, isRanking, teamType };
+    return { eventId: data?.eventId, userId: user?.userId, teamId: values.teamId, advisor: advisorText(values.advisor), isRanking, teamType };
   };
 
   const previewSignup = async () => {
@@ -184,6 +190,10 @@ export default function SignupDetailPage() {
 
   const cancelSignup = async () => {
     if (!data || !user) return;
+    if (!dayjs().isBefore(data.signupEnd)) {
+      setNow(dayjs());
+      return message.warning('报名已结束，无法取消报名');
+    }
     const res = await axios.post('/api/event/cancel', { eventId: data.eventId, userId: user.userId });
     if (res.data.code === 200) {
       message.success('已取消报名');
@@ -192,7 +202,6 @@ export default function SignupDetailPage() {
     } else message.error(res.data.msg || '取消失败');
   };
 
-  const now = dayjs();
   const canSignup = data && now.isAfter(data.signupStart) && now.isBefore(data.signupEnd) && data.signupCount < data.maxSignup;
   const signupEnded = data ? !now.isBefore(data.signupEnd) : false;
   const eventEnded = data ? !now.isBefore(data.eventEnd) : false;
@@ -314,7 +323,7 @@ export default function SignupDetailPage() {
         <Form form={form} layout="vertical">
           {data?.isTeam === 1 && <Form.Item name="teamId" label="参赛队伍" rules={[{ required: true }]}><Select options={myTeams.map(team => ({ value: team.teamId as number, label: String(team.teamName) }))} /></Form.Item>}
           {data?.type === 'GPLT' ? <Form.Item name="gpltGroup" label="参赛组别" rules={[{ required: true }]}><Select options={['星芒初绽', '长风破浪', '凌霄问鼎'].map(value => ({ value, label: value }))} /></Form.Item> : data?.type === 'LANQIAO' ? <Form.Item name="lanqiaoGroup" label="参赛组别" rules={[{ required: true }]}><Select options={['C/C++程序设计', 'Python程序设计', 'Java软件开发'].map(value => ({ value, label: value }))} /></Form.Item> : <Form.Item name="xcpcType" label="参赛类型" rules={[{ required: true }]}><Select options={[{ value: 'official', label: '正式参赛' }, { value: 'girl', label: '女生队伍' }, { value: 'star', label: '打星参赛' }]} /></Form.Item>}
-          <Form.Item name="advisor" label="指导老师"><Select mode="tags" open={false} placeholder="输入后回车，可填写多位" /></Form.Item>
+          <Form.Item name="advisor" label="指导老师"><AdvisorInput /></Form.Item>
           <Form.Item name="isRanking" label="参与排名" valuePropName="checked"><Switch /></Form.Item>
         </Form>
       </Modal>

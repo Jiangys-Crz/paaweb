@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import ts from 'typescript';
+
+const source = readFileSync(new URL('../src/app/utils/resolverDisplay.ts', import.meta.url), 'utf8');
+const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+const api = {};
+new Function('require', 'exports', compiled)(createRequire(import.meta.url), api);
+const team = { name: '月亮队', organization: '示例大学', isStar: true, isGirl: true, englishName: 'Moon Team' };
+assert.equal(api.decorateResolverTeamName(team), '⭐ 👧 月亮队');
+assert.equal(api.formatResolverName(team), '示例大学: ⭐ 👧 月亮队');
+assert.equal(api.formatResolverName(team, '{team.english_name} / {org.formal_name}'), 'Moon Team / 示例大学');
+assert.equal(api.formatResolverName({ ...team, name: '<script>{org.name}</script>' }, '{team.name}'), '⭐ 👧 <script>{org.name}</script>');
+assert.equal(api.formatResolverName({ ...team, name: '$& $1' }, '{team.name}'), '⭐ 👧 $& $1');
+assert.deepEqual(api.resolverProblemLabel('A', { status: 'AC', tryCount: 4, time: 137 }), { attempted: true, label: "4 137'", attempts: 4, minutes: "137'" });
+assert.equal(api.resolverProblemLabel('B', { status: 'WA', tryCount: 1, time: 0 }).minutes, "0'");
+assert.equal(api.resolverProblemLabel('C', { status: 'PENDING', tryCount: 2, score: 3, time: 296 }).attempts, 5);
+assert.equal(api.resolverProblemLabel('D').label, 'D');
+console.log('Resolver display template, identity markers, and split submission labels passed.');

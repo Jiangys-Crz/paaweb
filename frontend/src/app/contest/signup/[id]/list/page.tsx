@@ -1,13 +1,13 @@
 "use client";
 
-import { Alert, Button, Empty, Input, Select, Skeleton, Statistic, Table, Tag } from 'antd';
-import type { TableColumnsType } from 'antd';
+import { Alert, Button, Empty, Input, Select, Skeleton, Statistic, Pagination, Spin, Tag } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import { ArrowLeftOutlined, CheckCircleOutlined, ReloadOutlined, SearchOutlined, TeamOutlined, TrophyOutlined, UserOutlined } from '@ant-design/icons';
 import axios from 'axios';
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { rankingText, signupGroupText } from '@/utils/contestDisplay';
+import BoardParticipantCard from '@/app/components/BoardParticipantCard';
 import ActivityLayout from '../../../ContestNav';
 import styles from './page.module.css';
 
@@ -40,6 +40,8 @@ interface PublicSignup {
   key: string;
   id?: number | string;
   schoolName?: string;
+  organization?: string;
+  organizationLogo?: string;
   teamName?: string;
   teamType?: string;
   membersContent?: string;
@@ -123,22 +125,6 @@ export default function SignupPublicListPage() {
       {signupGroupText(value, isTeam, isTeam ? '正式队伍' : '正式参赛')}
     </Tag>
   );
-  const displayText = (value: string | number | undefined) => value || '—';
-  const columns: TableColumnsType<PublicSignup> = [
-    { title: '序号', key: 'index', width: 72, align: 'center', render: (_, __, index) => <span className={styles.rowIndex}>{(current - 1) * pageSize + index + 1}</span> },
-    { title: '学校 / 学院', dataIndex: 'schoolName', width: 200, render: displayText },
-    ...(isTeam ? [
-      { title: '队伍名称', dataIndex: 'teamName', width: 200, render: (value: string) => <span className={styles.primaryText}>{displayText(value)}</span> },
-      { title: '队伍类型', dataIndex: 'teamType', width: 150, render: renderGroup },
-      { title: '队伍成员', dataIndex: 'membersContent', width: 220, render: (value: string) => <span className={styles.members}>{displayText(value)}</span> },
-    ] : [
-      { title: '姓名', dataIndex: 'realName', width: 120, render: (value: string) => <span className={styles.primaryText}>{displayText(value)}</span> },
-      { title: '年级', dataIndex: 'gradeYear', width: 100, render: displayText },
-      { title: '参赛组别', dataIndex: 'teamType', width: 180, render: renderGroup },
-    ]),
-    { title: '指导老师', dataIndex: 'advisor', width: 160, render: displayText },
-    { title: '参与排名', dataIndex: 'isRanking', width: 110, render: (value: number | string) => <Tag className={styles.rankingTag} color={Number(value) === 1 ? 'green' : 'default'}>{rankingText(value)}</Tag> },
-  ];
 
   const search = () => {
     setCurrent(1);
@@ -193,21 +179,34 @@ export default function SignupPublicListPage() {
               <Button type="primary" icon={<SearchOutlined />} onClick={search}>搜索</Button>
               <Button icon={<ReloadOutlined spin={loading} />} onClick={() => setReloadKey(value => value + 1)}>刷新</Button>
             </div>
-            <Table<PublicSignup>
-              className={styles.table}
-              columns={columns}
-              dataSource={list}
-              loading={loading}
-              scroll={{ x: isTeam ? 1220 : 1000 }}
-              rowKey="key"
-              locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={listError ? '名单暂时无法加载' : filtered ? '未找到符合条件的报名信息' : '暂无审核通过的报名信息'} /> }}
-              pagination={{
-                current, pageSize, total, locale: zhCN.Pagination,
-                showSizeChanger: true,
-                pageSizeOptions: [10, 20, 50, 100],
-                showTotal: count => `共 ${count} ${unit}${filtered ? '符合筛选条件' : '审核通过'}`,
-                onChange: (page, size) => { setCurrent(size === pageSize ? page : 1); setPageSize(size); },
-              }}
+            <Spin spinning={loading}>
+              <div className={styles.cardRegion} aria-busy={loading}>
+                {list.length > 0 ? <div className={`board-participant-grid ${styles.cardGrid}`}>
+                  {list.map(record => <BoardParticipantCard key={record.key} isTeam={isTeam} row={{
+                    name: record.teamName || record.realName || '—',
+                    organization: record.organization || record.schoolName,
+                    organizationLogo: record.organizationLogo,
+                    group: record.teamType,
+                    isGirl: record.teamType === 'girl',
+                    isStar: record.teamType === 'star' || record.isRanking === 0 || record.isRanking === '0',
+                    advisor: record.advisor,
+                    members: record.membersContent,
+                  }}>
+                    <div className={styles.cardExtra}>
+                      {!isTeam && <div>年级：{record.gradeYear || '—'}</div>}
+                      <div>参与排名：{rankingText(record.isRanking)}</div>
+                    </div>
+                  </BoardParticipantCard>)}
+                </div> : !loading && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={listError ? '名单暂时无法加载' : filtered ? '未找到符合条件的报名信息' : '暂无审核通过的报名信息'} />}
+              </div>
+            </Spin>
+            <Pagination
+              className={styles.pagination}
+              current={current} pageSize={pageSize} total={total} locale={zhCN.Pagination}
+              responsive showSizeChanger
+              pageSizeOptions={[10, 20, 50, 100]}
+              showTotal={count => `共 ${count} ${unit}${filtered ? '符合筛选条件' : '审核通过'}`}
+              onChange={(page, size) => { setCurrent(size === pageSize ? page : 1); setPageSize(size); }}
             />
             <div className={styles.footerNote}><CheckCircleOutlined /> 名单以审核通过的报名信息为准{filtered && '，当前显示筛选后的结果'}。</div>
           </div>

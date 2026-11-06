@@ -17,6 +17,16 @@ import java.util.Map;
 
 @Mapper
 public interface UserMapper extends BaseMapper<Users> {
+    @Select("<script>" +
+            "SELECT u.user_id, u.user_account, u.user_name, u.real_name, u.number_id, u.email, v.university_name " +
+            "FROM users u JOIN major m ON u.major_id = m.major_id " +
+            "JOIN school s ON m.school_id = s.school_id JOIN university v ON s.university_id = v.university_id " +
+            "WHERE u.number_id IN <foreach collection='numbers' item='number' open='(' separator=',' close=')'>#{number}</foreach> " +
+            "AND v.university_name IN <foreach collection='universities' item='university' open='(' separator=',' close=')'>#{university}</foreach> " +
+            "ORDER BY u.user_id</script>")
+    List<com.cwnupaa.backend.vo.BulkEmailUserIdentityVO> selectBulkEmailIdentities(
+            @Param("universities") List<String> universities, @Param("numbers") List<String> numbers);
+
     @Update("UPDATE users SET id_photo_file_id = #{fileId}, id_photo_updated_at = #{updatedAt} WHERE user_id = #{userId}")
     int updateIdPhoto(@Param("userId") Long userId, @Param("fileId") Long fileId,
                       @Param("updatedAt") LocalDateTime updatedAt);

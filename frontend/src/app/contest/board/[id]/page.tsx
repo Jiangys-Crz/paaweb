@@ -4,7 +4,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  Avatar,
+  Alert,
   Button,
   Card,
   Col,
@@ -42,12 +42,10 @@ import {
   FilePdfOutlined,
   NumberOutlined,
   PlayCircleOutlined,
-  PushpinOutlined,
   SearchOutlined,
   SolutionOutlined,
   SyncOutlined,
-  TeamOutlined,
-  UserOutlined
+  TeamOutlined
 } from '@ant-design/icons';
 import axios from 'axios';
 import dayjs from 'dayjs';
@@ -57,9 +55,18 @@ import * as XLSX from 'xlsx';
 import { useParams, useRouter } from 'next/navigation';
 import { exportBoardPdf } from '@/app/utils/exportBoardPdf';
 import { useBoardModalScrollLock } from '@/app/utils/useBoardModalScrollLock';
+import type { SubmissionVO } from '@/types/leaderboard';
 import SubmissionCodeBlock from '@/app/components/SubmissionCodeBlock';
+import BoardResolver from '@/app/components/BoardResolver';
+import { BOARD_RESULT_COLORS } from '@/app/utils/boardResultColors';
+import { BOARD_SCORE_LEVELS as GPLT_SCORE_LEVELS } from '@/app/utils/boardScoreColors';
+import { formatBoardTitle } from '@/app/utils/boardTitles';
+import ExternalBoardStandings from '@/app/components/ExternalBoardStandings';
+import BoardParticipantCard from '@/app/components/BoardParticipantCard';
+import { useBoardProblemHover } from '@/app/components/BoardProblemHover';
+import { BoardParticipantMarkers } from '@/app/components/BoardParticipantIdentity';
 import { getBoardProgressStatus, hasBoardFreezeWindow, resolveBoardUnfreezeState } from '@/app/utils/boardProgress';
-import { buildBoardDisplayRows, matchesBoardParticipantSearch, matchesBoardParticipantType, type BoardDisplayRowMeta, type BoardParticipantFilter } from '@/app/utils/boardParticipants';
+import { buildBoardDisplayRows, compareBoardRank, matchesBoardParticipantSearch, matchesBoardParticipantType, type BoardDisplayRowMeta, type BoardParticipantFilter } from '@/app/utils/boardParticipants';
 import { desktopModalStyle, useBoardDesktopLayout, useViewportSize } from '@/app/utils/useBoardDesktopLayout';
 
 dayjs.extend(duration);
@@ -68,20 +75,8 @@ const { Option } = Select;
 const { Title } = Typography;
 
 const BOARD_COLORS = {
-  firstAc: '#1b5e20', ac: '#4caf50', wa: '#d32f2f', frozen: '#1d4ed8',
-  gold: '#fde047', silver: '#cbd5e1', bronze: '#b45309'
-};
-
-const GPLT_SCORE_LEVELS = [
-  { max: 25, className: 'cell-gplt-level-1', color: '#ffccc7', textColor: '#000', label: '0-25%' },
-  { max: 50, className: 'cell-gplt-level-2', color: '#bae7ff', textColor: '#000', label: '26-50%' },
-  { max: 75, className: 'cell-gplt-level-3', color: '#d9f7be', textColor: '#000', label: '51-75%' },
-  { max: Infinity, className: 'cell-gplt-level-4', color: '#52c41a', textColor: '#fff', label: '76-100%' }
-];
-
-const getGpltScoreLevel = (score: number, maxScore: number) => {
-  const percent = maxScore > 0 ? (score / maxScore) * 100 : 0;
-  return GPLT_SCORE_LEVELS.find(level => percent <= level.max) || GPLT_SCORE_LEVELS[GPLT_SCORE_LEVELS.length - 1];
+  ...BOARD_RESULT_COLORS,
+  gold: '#e4b011', silver: '#b6c1d1', bronze: '#b9783c'
 };
 
 interface BoardProblem {
@@ -101,6 +96,7 @@ interface BoardProblem {
 interface ProblemStatus {
   status: 'AC' | 'WA' | 'PENDING' | 'NONE' | 'Scored';
   score?: number;
+  maxScore?: number;
   time?: number;
   tryCount?: number;
   isFirstAc?: boolean;
@@ -119,6 +115,10 @@ interface RankItem {
   memberInfos?: MemberInfo[];
   avatar?: string;
   organization?: string;
+  organizationLogo?: string;
+  advisor?: string;
+  coach?: string;
+  englishName?: string;
   isStar?: boolean;
   isGirl?: boolean;
   medal?: 'Gold' | 'Silver' | 'Bronze';
@@ -133,11 +133,13 @@ interface BoardVO {
   boardId: number;
   eventId: number;
   title: string;
+  sessionName?: string;
   type: 'XCPC' | 'GPLT' | 'LANQIAO';
   status: 'PENDING' | 'RUNNING' | 'FROZEN' | 'ENDED';
   isTeam?: number;
   unfrozen?: boolean;
   isUnfrozen?: boolean;
+  resolverEnabled?: boolean;
   startTime: string;
   endTime: string;
   freezeTime?: string;
@@ -151,20 +153,6 @@ interface ParticipantSearchOption {
   value: number;
   label: string;
   participant: RankItem;
-}
-
-interface SubmissionVO {
-  submissionId: number;
-  displayId: string;
-  problemName: string;
-  userName: string;
-  teamName?: string;
-  status: string;
-  score?: number;
-  scoreDisplay?: string;
-  time: string;
-  memory: string;
-  submitTime: string;
 }
 
 interface BoardStats {
@@ -188,6 +176,9 @@ function useDebounce<T>(value: T, delay: number): T {
 
 const CustomTableStyles = () => (
   <style>{`
+    .board-page-fit-viewport.external-board-centered { width:80%; margin-inline:auto; }
+    @media (max-width:767px), (pointer:coarse) { .board-page-fit-viewport.external-board-centered { width:100%; } }
+    .rank-container, .rank-fit-inner, .rank-fit-slot { transition:none !important; animation:none !important; }
     .rank-container { display: flow-root; min-width: 0; max-width: 100%; color: #111827; font-family: 'Times New Roman', 'Microsoft YaHei', sans-serif !important; }
     .rank-table, .rank-table .ant-table { font-family: Menlo, Monaco, 'Microsoft YaHei', monospace; font-size: 12px; color: #111827; }
     .rank-table .ant-table-tbody > tr { height: 60px; background-color: #ffffff; }
@@ -204,23 +195,23 @@ const CustomTableStyles = () => (
     .rank-container .main-symbol { font-size: 18px; font-weight: 700; line-height: 1; margin-bottom: 2px; }
     .rank-container .frozen-symbol { font-size: 16px; font-weight: 700; line-height: 1; margin-bottom: 2px; }
     .rank-container .sub-info { font-size: 11px; font-weight: 400; line-height: 1.25; opacity: 0.8; white-space: nowrap; }
-    .rank-page-progress { position: relative; margin-top: 8px; --progress-color: #4caf50; }
-    .rank-page-progress[data-status="FROZEN"] { --progress-color: #d32f2f; }
+    .rank-page-progress { position: relative; margin-top: 8px; --progress-color: ${BOARD_RESULT_COLORS.ac}; }
+    .rank-page-progress[data-status="FROZEN"] { --progress-color: ${BOARD_RESULT_COLORS.frozen}; }
     .rank-page-progress[data-status="ENDED"] { --progress-color: #3b82f6; }
-    .rank-page-progress[data-freeze="false"] { --progress-color: #4caf50; }
-    .rank-page-progress .contest-slider { height: 36px; margin: 0; padding: 0; }
-    .rank-page-progress .contest-slider .ant-slider-rail { height: 36px; background: #f3f4f6; border-radius: 999px; border: 1px solid #e5e7eb; }
-    .rank-page-progress .contest-slider .ant-slider-track { height: 36px; background: var(--progress-color); border-radius: 999px; }
+    .rank-page-progress[data-freeze="false"] { --progress-color: ${BOARD_RESULT_COLORS.ac}; }
+    .rank-page-progress .contest-slider { height: 20px; margin: 0; padding: 0; }
+    .rank-page-progress .contest-slider .ant-slider-rail { height: 20px; background: #f3f4f6; border-radius: 999px; border: 1px solid #e5e7eb; }
+    .rank-page-progress .contest-slider .ant-slider-track { height: 20px; background: var(--progress-color); border-radius: 999px; }
     .rank-page-progress[data-status="PENDING"] .ant-slider-rail { background: #ffffff; }
     .rank-page-progress[data-status="PENDING"] .ant-slider-track, .rank-page-progress[data-status="PENDING"] .ant-slider-handle { display: none; }
-    .rank-page-progress .contest-slider .ant-slider-handle { inset-block-start: 10px; width: 16px; height: 16px; margin-top: 0; opacity: 1; z-index: 3; }
-    .rank-page-progress .contest-slider .ant-slider-handle::before { inset: -10px; width: 36px; height: 36px; }
-    .rank-page-progress .contest-slider .ant-slider-handle::after { inset: 0; width: 16px; height: 16px; box-sizing: border-box; border: 1px solid #ffffff59; background: color-mix(in srgb, var(--progress-color) 88%, #000000); box-shadow: none; outline: none; transition: box-shadow .15s ease; }
+    .rank-page-progress .contest-slider .ant-slider-handle { inset-block-start: 3px; width: 14px; height: 14px; margin-top: 0; opacity: 1; z-index: 3; }
+    .rank-page-progress .contest-slider .ant-slider-handle::before { inset: -12px; width: 38px; height: 38px; }
+    .rank-page-progress .contest-slider .ant-slider-handle::after { inset: 0; width: 14px; height: 14px; box-sizing: border-box; border: 1px solid #ffffff59; background: color-mix(in srgb, var(--progress-color) 88%, #000000); box-shadow: none; outline: none; transition: box-shadow .15s ease; }
     .rank-page-progress .contest-slider .ant-slider-handle:hover::after,
     .rank-page-progress .contest-slider .ant-slider-handle:focus-visible::after,
-    .rank-page-progress .contest-slider .ant-slider-handle:active::after { inset: 0; width: 16px; height: 16px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--progress-color) 20%, transparent); outline: none; }
-    .rank-page-progress-caption { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #6b7280; font-family: Arial, 'Microsoft YaHei', sans-serif; font-size: 16px; font-weight: 700; }
-    .freeze-mark { position: absolute; top: 0; height: 36px; width: 2px; background-color: #f59e0b; z-index: 2; }
+    .rank-page-progress .contest-slider .ant-slider-handle:active::after { inset: 0; width: 14px; height: 14px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--progress-color) 20%, transparent); outline: none; }
+    .rank-page-progress-caption { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); pointer-events: none; color: #6b7280; font-family: Arial, 'Microsoft YaHei', sans-serif; font-size: 13px; font-weight: 700; }
+    .freeze-mark { position: absolute; top: 0; height: 20px; width: 2px; background-color: #f59e0b; z-index: 2; }
     .rank-table.ant-table-bordered > .ant-table-container { border: none !important; }
     .rank-table.ant-table-bordered > .ant-table-container > .ant-table-header > table,
     .rank-table.ant-table-bordered > .ant-table-container > .ant-table-body > table { border: none !important; }
@@ -308,12 +299,12 @@ const CustomTableStyles = () => (
     .rank-table .ant-table-tbody > tr > td.cell-problem-ac { background-color: ${BOARD_COLORS.ac} !important; }
     .rank-table .ant-table-tbody > tr > td.cell-problem-first-ac { background-color: ${BOARD_COLORS.firstAc} !important; }
     .rank-table .ant-table-tbody > tr > td.cell-problem-wa { background-color: ${BOARD_COLORS.wa} !important; }
-    .rank-table .ant-table-tbody > tr > td.cell-problem-frozen { background-color: ${BOARD_COLORS.frozen} !important; }
+    .rank-table .ant-table-tbody > tr > td.cell-problem-frozen { background-color: ${BOARD_COLORS.frozen} !important; color:#ffffff !important; }
     .rank-table .ant-table-tbody > tr > td.cell-gplt-level-1 { background-color: #ffccc7 !important; }
     .rank-table .ant-table-tbody > tr > td.cell-gplt-level-2 { background-color: #bae7ff !important; }
     .rank-table .ant-table-tbody > tr > td.cell-gplt-level-3 { background-color: #d9f7be !important; }
     .rank-table .ant-table-tbody > tr > td.cell-gplt-level-4 { background-color: #52c41a !important; color: #fff !important; }
-    .rank-table .ant-table-tbody > tr > td:is(.cell-problem-ac, .cell-problem-first-ac, .cell-problem-wa, .cell-problem-frozen, .cell-gplt-level-4) { color: #ffffff !important; }
+    .rank-table .ant-table-tbody > tr > td:is(.cell-problem-ac, .cell-problem-first-ac, .cell-problem-wa, .cell-gplt-level-4) { color: #ffffff !important; }
     .rank-table .problem-cell-content { display: flex; flex-direction: column; gap: 4px; align-items: center; justify-content: center; min-height: 56px; color: inherit; font-weight: 700; }
     .rank-table .ant-table-cell.problem-col { padding: 2px !important; border: 1px solid #ffffff !important; }
     .rank-table .ant-table-summary { background-color: transparent !important; }
@@ -329,25 +320,25 @@ const CustomTableStyles = () => (
     .summary-bg-dark { background-color: #dbeafe !important; }
     .summary-bg-light { background-color: #eff5fa !important; }
     .summary-empty-cell { background-color: transparent !important; border: none !important; }
-    .rank-table .problem-history-cell { cursor: pointer; }
+    .rank-table .problem-history-cell { cursor: help; }
     .rank-table .problem-history-cell:focus-visible { outline: 2px solid #1d4ed8; outline-offset: -2px; }
-    .rank-page-header { margin: 24px; padding: 24px; background: #ffffff; border: 1px solid #f3f4f6; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    .rank-page-header { margin: 12px 24px; padding: 12px 20px; background: #ffffff; border: 1px solid #f3f4f6; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
     .rank-page-heading { display: block; }
     .rank-page-title { min-width: 0; text-align: center; }
-    .rank-page-title h3 { color: #111827; font-family: 'Times New Roman', 'Microsoft YaHei', serif; font-size: 30px; font-weight: 700; line-height: 1.35; white-space: nowrap; margin: 0 0 8px !important; }
+    .rank-page-title h3 { color: #111827; font-family: 'Times New Roman', 'Microsoft YaHei', serif; font-size: 26px; font-weight: 700; line-height: 1.2; white-space: nowrap; margin: 0 0 6px !important; }
     .rank-page-meta { display: flex; flex-wrap: nowrap; justify-content: center; gap: 8px 16px; color: #6b7280; font-family: Arial, 'Microsoft YaHei', sans-serif; font-size: 14px; }
     .rank-page-meta-id { color: #374151; font-family: Menlo, Monaco, monospace; }
     .rank-page-meta-type { color: #1d4ed8; font-weight: 700; }
     .rank-page-meta-status { color: #dc2626; font-weight: 700; }
-    .rank-page-timeline { margin-top: 24px; }
-    .rank-page-timeline-bottom { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 12px; }
+    .rank-page-timeline { margin-top: 12px; }
+    .rank-page-timeline-bottom { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 10px 20px; margin-top: 8px; }
     .rank-page-time-progress { margin-right: auto; display: flex; align-items: center; gap: 12px; font-family: Menlo, Monaco, monospace; font-size: 16px; white-space: nowrap; color: #15803d; }
     .rank-page-time-progress[data-replay="true"] { color: #b45309; }
     .rank-page-time-progress-total { color: #9ca3af; }
     .rank-page-legend { display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 12px 24px; font-size: 12px; }
     .rank-page-times { display: flex; justify-content: space-between; flex-wrap: nowrap; gap: 4px 16px; font-size: 16px; font-weight: 700; color: #555; margin-bottom: 4px; }
     .rank-page-content { margin: 24px; padding: 24px; min-width: 0; background: #ffffff; border: 1px solid #f3f4f6; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-    .rank-page-back { margin-bottom: 8px; }
+    .rank-page-back { margin-bottom: 2px; }
     .rank-page-filters { padding-bottom: 12px; display: flex; gap: 12px; align-items: center; flex-wrap: nowrap; border-bottom: 1px solid #f0f0f0; }
     .rank-page-filters > * { max-width: 100%; }
     .rank-participant-search { flex: 0 0 320px; min-width: 0; }
@@ -369,37 +360,20 @@ const formatDuration = (seconds: number) => {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 };
 
-const formatToMinutes = (val: number) => {
-  if (val < 0) return '-';
-  return val.toString();
-};
-
-const getRankCellClassName = (record: RankItem) => {
-  if (record.isStar || record.rank === -1 || !record.medal) return '';
-  return `rank-medal-${record.medal.toLowerCase()}`;
-};
-
 const renderParticipantName = (name: string, record: RankItem) => (
   <>
     <span>{name}</span>
-    {record.isStar ? <span role="img" aria-label="Unofficial">⭐</span>
-      : record.isGirl ? <span role="img" aria-label="Female Team">👧</span> : null}
+    <BoardParticipantMarkers row={record} />
   </>
 );
-
-const renderBoardPosition = (_: unknown, record: BoardDisplayRow) => record.isPinned ? (
-  <Tooltip title={`Pinned · original position #${record.boardPosition}`}>
-    <PushpinOutlined aria-label={`Pinned · original position #${record.boardPosition}`} />
-  </Tooltip>
-) : <div>{record.boardPosition}</div>;
 
 const formatSubmissionParticipant = (record: SubmissionVO, isPersonal: boolean) => {
   return (isPersonal ? record.userName : record.teamName) || '-';
 };
 
 const SUBMISSION_VERDICTS: Record<string, { text: string; color: string; icon: React.ReactNode }> = {
-  ACCEPTED: { text: 'Accepted', color: '#16a34a', icon: <CheckCircleOutlined /> },
-  WRONG_ANSWER: { text: 'Wrong Answer', color: '#dc2626', icon: <CloseCircleOutlined /> },
+  ACCEPTED: { text: 'Accepted', color: BOARD_RESULT_COLORS.ac, icon: <CheckCircleOutlined /> },
+  WRONG_ANSWER: { text: 'Wrong Answer', color: BOARD_RESULT_COLORS.wa, icon: <CloseCircleOutlined /> },
   TIME_LIMIT_EXCEEDED: { text: 'Time Limit Exceeded', color: '#ea580c', icon: <ClockCircleOutlined /> },
   MEMORY_LIMIT_EXCEEDED: { text: 'Memory Limit Exceeded', color: '#ea580c', icon: <ExclamationCircleOutlined /> },
   OUTPUT_LIMIT_EXCEEDED: { text: 'Output Limit Exceeded', color: '#ea580c', icon: <ExclamationCircleOutlined /> },
@@ -413,7 +387,7 @@ const SUBMISSION_VERDICTS: Record<string, { text: string; color: string; icon: R
   HACK_SUCCESSFUL: { text: 'Hack Successful', color: '#16a34a', icon: <CheckCircleOutlined /> },
   HACK_UNSUCCESSFUL: { text: 'Hack Unsuccessful', color: '#dc2626', icon: <CloseCircleOutlined /> },
   FETCHED: { text: 'Fetched', color: '#2563eb', icon: <SyncOutlined spin /> },
-  FROZEN: { text: 'Frozen', color: '#0ea5e9', icon: <span aria-hidden="true">❄</span> },
+  FROZEN: { text: 'Frozen', color: BOARD_RESULT_COLORS.frozen, icon: <span aria-hidden="true">❄</span> },
   PENDING: { text: 'Pending', color: '#6b7280', icon: <SyncOutlined spin /> },
   JUDGING: { text: 'Judging', color: '#2563eb', icon: <SyncOutlined spin /> },
   COMPILING: { text: 'Compiling', color: '#2563eb', icon: <SyncOutlined spin /> }
@@ -461,6 +435,22 @@ export default function BoardDetailPage() {
   const [displayTime, setDisplayTime] = useState(0);
   const [isLiveMode, setIsLiveMode] = useState(true);
   const [activeTab, setActiveTab] = useState('rank');
+  const [resolverOpen, setResolverOpen] = useState(false);
+  const closingResolverRef = useRef(false);
+  const closeResolver = useCallback(async () => {
+    if (closingResolverRef.current) return;
+    closingResolverRef.current = true;
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      // Keep the resolver covering the board while responsive layouts settle.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+      setResolverOpen(false);
+    } catch {
+      setResolverOpen(false);
+    } finally {
+      closingResolverRef.current = false;
+    }
+  }, []);
   const [filterType, setFilterType] = useState<BoardParticipantFilter>('all');
   const [searchText, setSearchText] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
@@ -474,27 +464,31 @@ export default function BoardDetailPage() {
   const [subProblemId, setSubProblemId] = useState<string | undefined>(undefined);
   const [subStatus, setSubStatus] = useState<string | undefined>(undefined);
   const [subKeyword, setSubKeyword] = useState('');
+  const submissionsRequest = useRef<AbortController | null>(null);
+  const submissionsViewRef = useRef<HTMLDivElement>(null);
+  useEffect(() => () => submissionsRequest.current?.abort(), []);
   const [codeModalOpen, setCodeModalOpen] = useState(false);
   const [codeContent, setCodeContent] = useState('');
   const [codeLanguage, setCodeLanguage] = useState('');
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [codeError, setCodeError] = useState('');
+  const submissionCodeRequest = useRef<AbortController | null>(null);
   const [currentSubmission, setCurrentSubmission] = useState<SubmissionVO | null>(null);
+  useEffect(() => {
+    setCodeModalOpen(false);
+    return () => submissionCodeRequest.current?.abort();
+  }, [id]);
   const [exportLoading, setExportLoading] = useState(false);
   const [pdfExporting, setPdfExporting] = useState(false);
-  const [historySelection, setHistorySelection] = useState<{ row: RankItem; problem: BoardProblem } | null>(null);
-  const [historyPage, setHistoryPage] = useState(1);
-  const [historyRecords, setHistoryRecords] = useState<SubmissionVO[]>([]);
-  const [historyTotal, setHistoryTotal] = useState(0);
-  const [historyLoading, setHistoryLoading] = useState(false);
-  const { viewportRef: boardExportRef, contentRef: boardContentRef, fit: boardFit } = useBoardDesktopLayout(`${board?.title || ''}:${activeTab}:${gpltScope}`);
+  const { viewportRef: boardExportRef, contentRef: boardContentRef, fit: boardFit } = useBoardDesktopLayout(`${board ? formatBoardTitle(board) : ''}:${activeTab}:${gpltScope}`);
   const viewportSize = useViewportSize();
 
-  useBoardModalScrollLock(!!historySelection || codeModalOpen);
+  useBoardModalScrollLock(codeModalOpen);
 
   const debouncedKeyword = useDebounce(subKeyword, 500);
+  const submissionKeyword = subKeyword.trim() ? debouncedKeyword : '';
   const lastSliderUpdateRef = useRef(0);
-  const rankTableViewportRef = useRef<HTMLDivElement | null>(null);
-  const rankTableInnerRef = useRef<HTMLDivElement | null>(null);
-  const [rankTableFit, setRankTableFit] = useState<{ scale: number; height?: number; width?: number }>({ scale: 1 });
+
 
   const loadData = useCallback(async (silent = false, timePoint?: number) => {
     if (!id) return;
@@ -541,7 +535,7 @@ export default function BoardDetailPage() {
     (board?.rows || []).filter(row => matchesBoardParticipantType(row, filterType))
   ), [board, filterType]);
 
-  const participantOptions = useMemo<ParticipantSearchOption[]>(() => filteredRows.map(row => ({
+  const participantOptions = useMemo<ParticipantSearchOption[]>(() => [...filteredRows].sort(compareBoardRank).map(row => ({
     value: row.itemId,
     label: row.name,
     participant: row
@@ -561,6 +555,13 @@ export default function BoardDetailPage() {
     if (!board) return 1;
     return Math.max(1, dayjs(board.endTime).diff(dayjs(board.startTime), 'second'));
   }, [board]);
+
+  const pending = !!board && now.isBefore(dayjs(board.startTime));
+  const wasPending = useRef(false);
+  useEffect(() => {
+    if (wasPending.current && !pending && board) void loadData(true);
+    wasPending.current = pending;
+  }, [pending, board, loadData]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(dayjs()), 1000);
@@ -601,92 +602,69 @@ export default function BoardDetailPage() {
     return () => window.removeEventListener('focus', refresh);
   }, [board?.type, gpltGroup, isLiveMode, loadData, pdfExporting]);
 
-  const loadSubmissions = useCallback(async (page = 1) => {
-    if (!id) return;
-    setSubPage(page);
-    const params: Record<string, string | number | undefined> = { page, pageSize: 20 };
-    if (subProblemId) params.problemId = subProblemId;
-    if (subStatus) params.status = subStatus;
-    if (debouncedKeyword) {
-      const matched = board?.problems.find(p => p.name.toLowerCase().includes(debouncedKeyword.toLowerCase()) || p.id.toLowerCase() === debouncedKeyword.toLowerCase());
-      if (matched) params.problemId = matched.id;
-      else params.keyword = debouncedKeyword;
-    }
-    try {
-      const res = await axios.get<{ code: number; data: { records: SubmissionVO[]; total: number } }>(`/api/leaderboard/submissions/${id}`, { params });
-      if (res.data.code === 200) {
-        setSubmissions(res.data.data.records);
-        setSubTotal(res.data.data.total || 0);
-      }
-    } catch {
-      message.error('Failed to load submissions');
-    }
-  }, [board, debouncedKeyword, id, subProblemId, subStatus]);
-
-  useEffect(() => {
-    if (activeTab === 'submissions') loadSubmissions(1);
-    if (activeTab === 'statistics') {
-      const targetTimeMs = !isLiveMode && board ? dayjs(board.startTime).add(displayTime, 'second').valueOf() : undefined;
-      loadStats(targetTimeMs);
-    }
-  }, [activeTab, board, debouncedKeyword, displayTime, isLiveMode, loadStats, loadSubmissions, subProblemId, subStatus]);
-
   const historyTimePoint = !isLiveMode && board
     ? dayjs(board.startTime).add(displayTime, 'second').valueOf()
     : undefined;
 
-  useEffect(() => {
-    if (!historySelection || !board) return;
+  const loadSubmissions = useCallback(async (page = 1) => {
+    if (!id) return;
+    submissionsRequest.current?.abort();
     const controller = new AbortController();
-    const params = {
-      page: historyPage,
-      pageSize: 10,
-      problemId: historySelection.problem.id,
-      ...(isPersonalBoard ? { userId: historySelection.row.itemId } : { signupTeamId: historySelection.row.itemId }),
-      ...(historyTimePoint !== undefined ? { timePoint: historyTimePoint } : {})
-    };
-    setHistoryLoading(true);
-    setHistoryRecords([]);
-    setHistoryTotal(0);
-    axios.get<{ code: number; data: { records: SubmissionVO[]; total: number } }>(`/api/leaderboard/submissions/${id}`, { params, signal: controller.signal })
-      .then(res => {
-        if (res.data.code !== 200) throw new Error('Failed to load submissions');
-        setHistoryRecords(res.data.data.records);
-        setHistoryTotal(res.data.data.total);
-      })
-      .catch(error => {
-        if (!controller.signal.aborted) {
-          console.error(error);
-          message.error('Failed to load submissions. Please try again.');
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setHistoryLoading(false);
-      });
-    return () => controller.abort();
-  }, [historySelection, historyPage, id, board, isPersonalBoard, historyTimePoint]);
-
-  const getProblemCellProps = useCallback((row: RankItem, problem: BoardProblem, className: string) => {
-    const openHistory = () => {
-      setHistoryPage(1);
-      setHistoryRecords([]);
-      setHistoryTotal(0);
-      setHistorySelection({ row, problem });
-    };
-    return {
-      className: `${className} problem-history-cell`,
-      role: 'button',
-      tabIndex: 0,
-      'aria-label': `View submission history for ${row.name} on ${problem.id} - ${problem.name}`,
-      onClick: openHistory,
-      onKeyDown: (event: React.KeyboardEvent<HTMLTableCellElement>) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          openHistory();
-        }
+    submissionsRequest.current = controller;
+    setSubPage(page);
+    const params: Record<string, string | number | undefined> = { page, pageSize: 20 };
+    if (subProblemId) params.problemId = subProblemId;
+    if (subStatus) params.status = subStatus;
+    const submissionTime = historyTimePoint;
+    if (submissionTime !== undefined) params.timePoint = submissionTime;
+    if (submissionKeyword) {
+      const matched = board?.problems.find(p => p.name.toLowerCase().includes(submissionKeyword.toLowerCase()) || p.id.toLowerCase() === submissionKeyword.toLowerCase());
+      if (matched) params.problemId = matched.id;
+      else params.keyword = submissionKeyword;
+    }
+    try {
+      const res = await axios.get<{ code: number; data: { records: SubmissionVO[]; total: number } }>(`/api/leaderboard/submissions/${id}`, { params, signal: controller.signal });
+      if (!controller.signal.aborted && res.data.code === 200) {
+        setSubmissions(res.data.data.records);
+        setSubTotal(res.data.data.total || 0);
       }
-    };
+    } catch {
+      if (!controller.signal.aborted) message.error('Failed to load submissions');
+    }
+  }, [board, submissionKeyword, id, subProblemId, subStatus, historyTimePoint]);
+
+  useEffect(() => {
+    if (activeTab === 'submissions') loadSubmissions(1);
+    if (activeTab === 'statistics') loadStats(historyTimePoint);
+  }, [activeTab, loadStats, loadSubmissions, historyTimePoint]);
+
+
+
+  const handleViewCode = useCallback(async (record: SubmissionVO) => {
+    submissionCodeRequest.current?.abort();
+    const controller = new AbortController();
+    submissionCodeRequest.current = controller;
+    setCurrentSubmission(record);
+    setCodeContent('');
+    setCodeLanguage(record.language || '');
+    setCodeError('');
+    setCodeLoading(true);
+    setCodeModalOpen(true);
+    try {
+      const res = await axios.get<{ code: number; msg?: string; data: { content: string; language: string } }>(`/api/leaderboard/submission/${record.submissionId}/code`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      if (res.data.code === 200) {
+        setCodeContent(res.data.data.content || '');
+        setCodeLanguage(res.data.data.language || record.language || '');
+      } else setCodeError(res.data.msg || '暂时无法查看该提交的代码');
+    } catch (error: unknown) {
+      if (!controller.signal.aborted) setCodeError(axios.isAxiosError(error) ? (error.response?.data as { msg?: string })?.msg || '暂时无法查看该提交的代码' : '暂时无法查看该提交的代码');
+    } finally {
+      if (!controller.signal.aborted) setCodeLoading(false);
+    }
   }, []);
+
+  const { getTriggerProps: getProblemHoverProps, popup: problemPopup } = useBoardProblemHover<RankItem, BoardProblem>({ boardId: id, isTeam: !isPersonalBoard, timePoint: historyTimePoint, scored: board?.type === 'GPLT' || board?.type === 'LANQIAO', revision: processedRows, onViewSubmission: handleViewCode });
 
   const onSliderChange = (val: number) => {
     setIsLiveMode(false);
@@ -713,31 +691,16 @@ export default function BoardDetailPage() {
     message.success('Back to Live');
   };
 
-  const handleViewCode = useCallback(async (record: SubmissionVO) => {
-    try {
-      const res = await axios.get<{ code: number; msg?: string; data: { content: string; language: string } }>(`/api/leaderboard/submission/${record.submissionId}/code`);
-      if (res.data.code === 200) {
-        setCurrentSubmission(record);
-        setCodeContent(res.data.data.content);
-        setCodeLanguage(res.data.data.language || '');
-        setCodeModalOpen(true);
-      } else message.warning(res.data.msg || 'Unable to view source code');
-    } catch (error: unknown) {
-      if (axios.isAxiosError(error)) message.error((error.response?.data as { msg?: string })?.msg || 'Unable to view submission details');
-      else message.error('Unable to view submission details');
-    }
-  }, []);
-
   const handleExportPdf = async () => {
     if (!board || !boardExportRef.current || pdfExporting || exportLoading) return;
-    if (!rankTableViewportRef.current) {
+    if ((board.type === 'GPLT' || board.type === 'LANQIAO') && !gpltGroup) {
       message.warning('Select a group to view and export the leaderboard');
       return;
     }
     setPdfExporting(true);
     const hide = message.loading('Generating leaderboard PDF...', 0);
     try {
-      await exportBoardPdf(boardExportRef.current, board.title);
+      await exportBoardPdf(boardExportRef.current, formatBoardTitle(board));
       message.success('PDF exported successfully');
     } catch (error) {
       console.error(error);
@@ -854,7 +817,7 @@ export default function BoardDetailPage() {
         }
       }
 
-      XLSX.writeFile(wb, `Contest_Rank_${board.title || 'Export'}.xlsx`);
+      XLSX.writeFile(wb, `Contest_Rank_${formatBoardTitle(board) || 'Export'}.xlsx`);
       message.success('Exported successfully');
     } catch (error) {
       console.error(error);
@@ -864,264 +827,6 @@ export default function BoardDetailPage() {
       setExportLoading(false);
     }
   };
-
-  const columns = useMemo((): ColumnsType<BoardDisplayRow> => {
-    if (!board) return [];
-    if (board.type === 'GPLT' || board.type === 'LANQIAO') {
-      const isPersonal = gpltScope === 'personal' || board.type === 'LANQIAO';
-      const cols: ColumnsType<BoardDisplayRow> = [
-        { title: '#', width: 40, align: 'center', render: renderBoardPosition },
-        {
-          title: 'Rk',
-          dataIndex: 'rank',
-          onCell: record => ({ className: getRankCellClassName(record) }),
-          width: 45,
-          align: 'center',
-          render: (rank: number) => <div className="rank-number">{rank === -1 ? '*' : rank}</div>
-        },
-        { title: 'Inst', dataIndex: 'organization', width: 130, render: text => <div className="rank-institution" title={text}>{text}</div> }
-      ];
-
-      cols.push(isPersonal ? {
-        title: 'Person',
-        key: 'user',
-        width: 190,
-        className: 'user-col',
-        render: (_, record) => (
-          <div className="rank-entry">
-            <Avatar shape="square" src={record.avatar} icon={<UserOutlined />} size={24} style={{ border: '1px solid #e0e0e0', minWidth: 24 }} />
-            <div className="rank-entry-text">
-              <div className="rank-entry-title" title={record.name}>
-                {renderParticipantName(record.name, record)}
-              </div>
-            </div>
-          </div>
-        )
-      } : {
-        title: 'Team',
-        dataIndex: 'name',
-        width: 220,
-        className: 'user-col',
-        render: (text, record) => (
-          <div className="rank-entry-text">
-            <div className="rank-entry-title" title={text}>
-              {renderParticipantName(text, record)}
-            </div>
-            {record.members && <div className="rank-entry-members" title={record.members}>{record.members}</div>}
-          </div>
-        )
-      });
-
-      cols.push({ title: 'Score', dataIndex: 'totalScore', width: 70, align: 'center', render: val => <div className="rank-score">{val}</div> });
-      if (isPersonal) {
-        board.problems.forEach(problem => {
-          cols.push({
-            title: <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}><div style={{ fontSize: 12, fontWeight: 700 }}>{problem.id}</div><div style={{ fontSize: 10, color: '#666' }}>{problem.score}</div></div>,
-            key: problem.id,
-            width: 42,
-            align: 'center',
-            className: 'problem-col',
-            onCell: record => {
-              const status = record.problemStatus[problem.id];
-              if (!status || status.status === 'NONE') return getProblemCellProps(record, problem, 'cell-problem-empty');
-              return getProblemCellProps(record, problem, getGpltScoreLevel(status.score || 0, problem.score || 100).className);
-            },
-            render: (_, record) => {
-              const status = record.problemStatus[problem.id];
-              return status && status.status !== 'NONE' ? <span style={{ fontSize: 13, fontWeight: 'bold' }}>{status.score}</span> : null;
-            }
-          });
-        });
-      }
-      cols.push({ title: 'Award', key: 'award', onCell: record => ({ className: getRankCellClassName(record) }), width: 70, align: 'center', render: (_, record) => record.medal || null });
-      return cols;
-    }
-
-    const cols: ColumnsType<BoardDisplayRow> = [
-      { title: '#', width: 40, align: 'center', render: renderBoardPosition },
-      { title: 'Rk', dataIndex: 'rank', onCell: record => ({ className: getRankCellClassName(record) }), width: 48, align: 'center', render: (rank: number) => <div className="rank-number">{rank === -1 ? '*' : rank}</div> },
-      { title: 'Institution', key: 'school', width: 130, render: (_, record) => <div className="rank-institution" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><BankOutlined style={{ fontSize: 16 }} /><div style={{ lineHeight: 1.2, whiteSpace: 'nowrap' }} title={record.organization}>{record.organization || 'Unknown'}</div></div> },
-      {
-        title: participantLabel,
-        key: 'user',
-        width: 220,
-        className: 'user-col',
-        render: (_, record) => (
-          <div className="rank-entry">
-            <Avatar shape="square" src={record.avatar} icon={<UserOutlined />} size={36} style={{ border: '1px solid #e0e0e0', minWidth: 36 }} />
-            <div className="rank-entry-text">
-              <div className="rank-entry-title" title={record.name}>
-                {renderParticipantName(record.name, record)}
-              </div>
-              {record.members && <div className="rank-entry-members" title={record.members}>{record.members}</div>}
-            </div>
-          </div>
-        )
-      },
-      { title: 'S', dataIndex: 'solved', width: 45, align: 'center', render: val => <div className="rank-solved">{val}</div> },
-      { title: 'P', dataIndex: 'penalty', width: 55, align: 'center', render: val => <div className="rank-penalty">{val}</div> }
-    ];
-
-    board.problems.forEach(problem => {
-      cols.push({
-        title: <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}><div style={{ fontSize: 14, fontWeight: 800 }}>{problem.id}</div><div style={{ fontSize: 11, fontWeight: 400, lineHeight: 1, color: '#4b5563' }}>{problem.accepted}</div></div>,
-        key: problem.id,
-        width: 54,
-        align: 'center',
-        className: 'problem-col',
-        onCell: record => {
-          const status = record.problemStatus[problem.id];
-          if (!status) return getProblemCellProps(record, problem, 'cell-problem-empty');
-          if (status.status === 'AC') return getProblemCellProps(record, problem, status.isFirstAc ? 'cell-problem-first-ac' : 'cell-problem-ac');
-          if (status.status === 'WA') return getProblemCellProps(record, problem, 'cell-problem-wa');
-          if (status.status === 'PENDING') return getProblemCellProps(record, problem, 'cell-problem-frozen');
-          return getProblemCellProps(record, problem, 'cell-problem-empty');
-        },
-        render: (_, record) => {
-          const status = record.problemStatus[problem.id];
-          if (!status || status.status === 'NONE') return null;
-          if (status.status === 'AC') return <div className="problem-cell-content"><div className="main-symbol">+</div><div className="sub-info">{status.tryCount}/{status.time}</div></div>;
-          if (status.status === 'WA') return <div className="problem-cell-content"><div className="main-symbol" style={{ fontSize: 20 }}>-</div><div className="sub-info">{status.tryCount}/{status.time}</div></div>;
-          if (status.status === 'PENDING') return <div className="problem-cell-content"><div className="frozen-symbol" style={{ fontSize: 16, fontWeight: 800 }}>? {status.tryCount}</div><div className="sub-info">{status.score || 0}/{status.time || 0}</div></div>;
-          return null;
-        }
-      });
-    });
-    cols.push({ title: 'Medal', key: 'award', onCell: record => ({ className: getRankCellClassName(record) }), width: 60, align: 'center', render: (_, record) => record.medal && !record.isStar ? record.medal : null });
-    return cols;
-  }, [board, gpltScope, getProblemCellProps, participantLabel]);
-
-  const rankTableWidth = useMemo(() => {
-    const total = columns.reduce((sum, column) => {
-      const width = typeof column.width === 'number' ? column.width : 120;
-      return sum + width;
-    }, 0);
-    return Math.max(total, 900);
-  }, [columns]);
-
-  useLayoutEffect(() => {
-    if (activeTab !== 'rank') return;
-    const viewport = rankTableViewportRef.current;
-    const inner = rankTableInnerRef.current;
-    if (!viewport || !inner) return;
-
-    let frameId = 0;
-    const updateFit = () => {
-      window.cancelAnimationFrame(frameId);
-      frameId = window.requestAnimationFrame(() => {
-        const viewportWidth = Math.max(1, viewport.clientWidth);
-        const naturalWidth = Math.max(rankTableWidth, inner.scrollWidth, inner.offsetWidth);
-        const naturalHeight = inner.offsetHeight;
-        const nextScale = Math.min(1, viewportWidth / naturalWidth);
-        const nextHeight = naturalHeight > 0 ? Math.ceil(naturalHeight * nextScale) : undefined;
-
-        setRankTableFit(previous => (
-          Math.abs(previous.scale - nextScale) < 0.001 && previous.height === nextHeight && previous.width === naturalWidth
-            ? previous
-            : { scale: nextScale, height: nextHeight, width: naturalWidth }
-        ));
-      });
-    };
-
-    updateFit();
-    const resizeObserver = new ResizeObserver(updateFit);
-    resizeObserver.observe(viewport);
-    resizeObserver.observe(inner);
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-      resizeObserver.disconnect();
-    };
-  }, [activeTab, board?.problems.length, columns.length, gpltGroup, gpltScope, processedRows, rankTableWidth]);
-
-  const summaryRender = useCallback(() => {
-    if (!board || (board.type === 'GPLT' && gpltScope === 'team')) return null;
-
-    if ((board.type === 'GPLT' && gpltScope === 'personal') || board.type === 'LANQIAO') {
-      const renderGPLTRow = (
-        label: string,
-        field: 'submitted' | 'attempted' | 'avgScore' | 'maxScore' | 'minScore',
-        index: number
-      ) => {
-        const bgClass = index % 2 === 0 ? 'summary-bg-dark' : 'summary-bg-light';
-        return (
-          <Table.Summary.Row style={{ background: 'transparent' }} key={label}>
-            <Table.Summary.Cell index={0} colSpan={3} className="summary-empty-cell" />
-            <Table.Summary.Cell index={3} colSpan={2} className={`summary-label-cell ${bgClass}`}>
-              <div style={{ textAlign: 'right', paddingRight: 10, fontWeight: 'bold' }}>{label}</div>
-            </Table.Summary.Cell>
-            {board.problems.map((problem, problemIndex) => {
-              let value: number | string = '-';
-              if (problem.attempted > 0 || field === 'submitted') {
-                if (field === 'submitted') value = problem.submitted;
-                else if (field === 'attempted') value = problem.attempted;
-                else if (field === 'avgScore') value = problem.avgScore?.toFixed(1) || '-';
-                else if (field === 'maxScore') value = problem.maxScore ?? '-';
-                else if (field === 'minScore') value = problem.minScore ?? '-';
-              }
-              return <Table.Summary.Cell index={5 + problemIndex} key={problem.id} className={`summary-data-cell ${bgClass}`}>{value}</Table.Summary.Cell>;
-            })}
-            <Table.Summary.Cell index={5 + board.problems.length} className="summary-empty-cell" />
-          </Table.Summary.Row>
-        );
-      };
-      return (
-        <>
-          {renderGPLTRow('Submitted', 'submitted', 0)}
-          {renderGPLTRow('Attempted', 'attempted', 1)}
-          {renderGPLTRow('Average Score', 'avgScore', 2)}
-          {renderGPLTRow('Max Score', 'maxScore', 3)}
-          {renderGPLTRow('Min Score', 'minScore', 4)}
-        </>
-      );
-    }
-
-    const renderStatRow = (
-      label: string,
-      field: 'submitted' | 'attempted' | 'accepted' | 'firstSolved' | 'lastSolved',
-      index: number,
-      showPercentage = false
-    ) => {
-      const bgClass = index % 2 === 0 ? 'summary-bg-dark' : 'summary-bg-light';
-      return (
-        <Table.Summary.Row style={{ background: 'transparent' }} key={label}>
-          <Table.Summary.Cell index={0} colSpan={3} className="summary-empty-cell" />
-          <Table.Summary.Cell index={3} colSpan={3} className={`summary-label-cell ${bgClass}`}>
-            <div style={{ textAlign: 'right', paddingRight: 20 }}>{label}</div>
-          </Table.Summary.Cell>
-          {board.problems.map((problem, problemIndex) => {
-            let content: React.ReactNode = '-';
-            const value = problem[field] || 0;
-
-            if (field === 'firstSolved' || field === 'lastSolved') {
-              content = value > -1 ? formatToMinutes(value) : '-';
-            } else {
-              content = value;
-              if (showPercentage && problem.submitted > 0) {
-                const percentage = `${((value / problem.submitted) * 100).toFixed(0)}%`;
-                content = <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}><span>{value}</span><span style={{ fontSize: 12, marginTop: 2, opacity: 0.8 }}>{percentage}</span></div>;
-              } else if (showPercentage) {
-                content = <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}><span>{value}</span><span style={{ fontSize: 12, marginTop: 2, opacity: 0.8 }}>0%</span></div>;
-              }
-            }
-
-            return <Table.Summary.Cell index={6 + problemIndex} key={problem.id} className={`summary-data-cell ${bgClass}`}>{content}</Table.Summary.Cell>;
-          })}
-          <Table.Summary.Cell index={6 + board.problems.length} className="summary-empty-cell" />
-        </Table.Summary.Row>
-      );
-    };
-
-    return (
-      <>
-        {renderStatRow('Submitted', 'submitted', 0)}
-        {renderStatRow('Attempted', 'attempted', 1, true)}
-        {renderStatRow('Accepted', 'accepted', 2, true)}
-        {renderStatRow('First Solved', 'firstSolved', 3)}
-        {renderStatRow('Last Solved', 'lastSolved', 4)}
-      </>
-    );
-  }, [board, gpltScope]);
 
   const progressStatus = board ? getBoardProgressStatus(
     board,
@@ -1195,7 +900,7 @@ export default function BoardDetailPage() {
 
   return (
     <ConfigProvider locale={enUS}>
-    <div className="board-page-fit-viewport" ref={boardExportRef} style={{ height: boardFit.height }}>
+    <div className="board-page-fit-viewport external-board-centered" ref={boardExportRef} style={{ height: boardFit.height }}>
     <div className="rank-container" ref={boardContentRef} style={{ width: boardFit.width, maxWidth: 'none', transform: `scale(${boardFit.scale})`, transformOrigin: 'top left' }}>
       <CustomTableStyles />
       <div className="main-content-box">
@@ -1205,7 +910,7 @@ export default function BoardDetailPage() {
           </div>
           <div className="rank-page-heading">
             <div className="rank-page-title">
-              <Title level={3}>{board?.title || 'Loading Contest...'}</Title>
+              <Title level={3}>{board ? formatBoardTitle(board) : 'Loading Contest...'}</Title>
               {board && (
                 <div className="rank-page-meta">
                   <span>ID: <span className="rank-page-meta-id">{board.boardId}</span></span>
@@ -1258,6 +963,25 @@ export default function BoardDetailPage() {
         </div>
 
         <div className="rank-page-content">
+          {!board ? <div style={{ textAlign: 'center', padding: 48 }}><Spin /></div> : pending ? (
+            <div className="board-prestart">
+              <div className="board-countdown" aria-label="Time until contest begins">
+                <div>距离比赛开始还有：</div>
+                <div className="board-countdown-units">
+                  {(() => {
+                    const seconds = Math.max(0, dayjs(board.startTime).diff(now, 'second'));
+                    return [[Math.floor(seconds / 3600), '小时'], [Math.floor(seconds / 60) % 60, '分钟'], [seconds % 60, '秒']].map(([value, label]) => (
+                      <div className="board-countdown-unit" key={label}><strong>{String(value).padStart(2, '0')}</strong><span>{label}</span></div>
+                    ));
+                  })()}
+                </div>
+              </div>
+              <div className="board-participant-grid">
+                {board.rows.map(row => <BoardParticipantCard key={row.itemId} row={row} isTeam={!isPersonalBoard} />)}
+              </div>
+              {!board.rows.length && <Empty description="暂无参赛人员" />}
+            </div>
+          ) : <>
           <Tabs activeKey={activeTab} onChange={setActiveTab} items={[{ label: 'Leaderboard', key: 'rank' }, { label: 'Submissions', key: 'submissions' }, { label: 'Statistics', key: 'statistics' }]} />
 
           {activeTab === 'rank' && (
@@ -1320,38 +1044,20 @@ export default function BoardDetailPage() {
                 >
                   <Button icon={<ExportOutlined />} loading={exportLoading}>Export Leaderboard <DownOutlined /></Button>
                 </Dropdown>
+                {board?.type === 'XCPC' && board.resolverEnabled && <Button icon={<PlayCircleOutlined />} onClick={() => { void document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {}); setResolverOpen(true); }}>Start Resolver</Button>}
                 <Button type="text" icon={<SyncOutlined />} onClick={() => loadData(false)}>Refresh</Button>
               </div>
-              {(board?.type === 'GPLT' || board?.type === 'LANQIAO') && !gpltGroup ? <Empty description="Select a group to view the leaderboard" style={{ margin: '40px 0' }} /> : (
-                <div
-                  ref={rankTableViewportRef}
-                  className="rank-fit-viewport"
-                  style={{ width: '100%', position: 'relative', marginTop: 12, height: rankTableFit.height }}
-                >
-                  <div
-                    className="rank-fit-slot"
-                    style={{ width: (rankTableFit.width ?? rankTableWidth) * rankTableFit.scale, margin: '0 auto' }}
-                  >
-                    <div
-                      ref={rankTableInnerRef}
-                      className="rank-fit-inner"
-                      style={{ width: rankTableWidth, transform: `scale(${rankTableFit.scale})`, transformOrigin: 'top left' }}
-                    >
-                      <Table className="rank-table" columns={columns} dataSource={processedRows} rowKey="boardRowKey" rowClassName={record => record.isPinned ? 'rank-row-pinned' : ''} pagination={false} loading={loading && !board} size="small" bordered summary={summaryRender} />
-                    </div>
-                  </div>
-                </div>
-              )}
+              {(board?.type === 'GPLT' || board?.type === 'LANQIAO') && !gpltGroup ? <Empty description="Select a group to view the leaderboard" style={{ margin: '40px 0' }} /> : board && <ExternalBoardStandings rows={processedRows} problems={board.problems} isTeam={!isPersonalBoard} scored={board.type !== 'XCPC'} showSummary={board.type !== 'GPLT' || isPersonalBoard} getProblemHoverProps={getProblemHoverProps} />}
             </>
           )}
 
           {activeTab === 'submissions' && (
-            <div>
+            <div ref={submissionsViewRef}>
               <div className="board-submission-filters" style={{ padding: '0 0 12px 0', display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'nowrap' }}>
                 <Select getPopupContainer={trigger => trigger.parentElement || trigger} placeholder="Problem" allowClear style={{ width: 140 }} value={subProblemId} onChange={setSubProblemId}>{board?.problems.map(problem => <Option key={problem.id} value={problem.id}>{problem.id}. {problem.name}</Option>)}</Select>
                 <Select getPopupContainer={trigger => trigger.parentElement || trigger} placeholder="Status" allowClear style={{ width: 140 }} value={subStatus} onChange={setSubStatus}>{['Accepted', 'Wrong Answer', 'Time Exceeded', 'Runtime Error', 'Compile Error', 'Pending'].map(status => <Option key={status} value={status}>{status}</Option>)}</Select>
                 <Input placeholder="Search..." prefix={<SearchOutlined />} value={subKeyword} onChange={event => setSubKeyword(event.target.value)} style={{ width: 240 }} />
-                <Button type="primary" icon={<SyncOutlined />} onClick={() => loadSubmissions(1)}>Refresh</Button>
+                <Button type="primary" icon={<SyncOutlined />} onClick={() => { void loadSubmissions(1); }}>Refresh</Button>
               </div>
               <Table className="board-submissions-table" dataSource={submissions} rowKey="submissionId" size="small" pagination={{ current: subPage, total: subTotal, pageSize: 20, onChange: loadSubmissions }} columns={submissionColumns} />
             </div>
@@ -1376,33 +1082,14 @@ export default function BoardDetailPage() {
               ) : <Empty description="No statistics available" />}
             </div>
           )}
+          </>}
         </div>
       </div>
 
-      <Modal
-        transitionName=""
-        rootClassName="external-board-modal board-desktop-modal"
-        style={desktopModalStyle(1100, viewportSize)}
-        title={`Submission History: ${historySelection?.row.name || ''} · ${historySelection?.problem.id || ''} · ${historySelection?.problem.name || ''}`}
-        open={!!historySelection}
-        onCancel={() => setHistorySelection(null)}
-        width={1100}
-        footer={null}
-      >
-        <Table
-          className="board-submissions-table"
-          dataSource={historyRecords}
-          rowKey="submissionId"
-          columns={submissionColumns}
-          loading={historyLoading}
-          size="small"
-          scroll={{ x: 1000 }}
-          locale={{ emptyText: 'No submissions for this participant and problem' }}
-          pagination={{ current: historyPage, total: historyTotal, pageSize: 10, showSizeChanger: false, onChange: setHistoryPage }}
-        />
-      </Modal>
+      {resolverOpen && board && <BoardResolver boardId={id} unfrozen={!!board.unfrozen} onClose={() => { void closeResolver(); }} />}
+      {problemPopup}
 
-      <Modal transitionName="" rootClassName="external-board-modal board-submission-detail-modal board-desktop-modal" style={desktopModalStyle(900, viewportSize)} title={`Submission Details #${currentSubmission?.submissionId || ''}`} open={codeModalOpen} onCancel={() => setCodeModalOpen(false)} width={900} footer={null} centered>
+      <Modal transitionName="" rootClassName="external-board-modal board-submission-detail-modal board-desktop-modal" style={desktopModalStyle(900, viewportSize)} title={`提交记录 #${currentSubmission?.submissionId || ''}`} open={codeModalOpen} onCancel={() => { submissionCodeRequest.current?.abort(); setCodeModalOpen(false); }} width={900} footer={null} centered>
         <div className="board-submission-info">
           {currentSubmission && (
             <Descriptions bordered size="small" column={2}>
@@ -1417,7 +1104,7 @@ export default function BoardDetailPage() {
             </Descriptions>
           )}
         </div>
-        <SubmissionCodeBlock code={codeContent} language={codeLanguage} />
+        <Spin spinning={codeLoading}>{codeError ? <Alert type="info" showIcon title={codeError} /> : <SubmissionCodeBlock code={codeContent} language={codeLanguage} />}</Spin>
       </Modal>
     </div>
     </div>

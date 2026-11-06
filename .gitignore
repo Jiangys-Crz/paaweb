@@ -23,6 +23,7 @@ SQL/backup*.sql
 
 # Dependencies, generated files and developer tools
 node_modules/
+.docker-local-types/
 .next/
 out/
 dist/

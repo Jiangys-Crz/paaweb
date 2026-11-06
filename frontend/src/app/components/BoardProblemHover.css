@@ -1,0 +1,20 @@
+.board-problem-details { width:430px; max-width:calc(100vw - 48px); color:#172131; font-family:Arial,"Microsoft YaHei",sans-serif; font-size:12px; }
+.board-problem-details header { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding-bottom:8px; border-bottom:1px solid #dce3ed; }
+.board-problem-details header strong { font-size:13px; }
+.board-problem-details small { display:block; margin-top:3px; color:#94a3b8; font-size:10px; font-weight:400; }
+.board-problem-participant-id { color:#172131; font-weight:700; }
+.board-problem-title { margin:8px 0 4px; color:#475569; font-weight:600; overflow-wrap:anywhere; }
+.board-problem-details dl { margin:0 0 6px; }
+.board-problem-details dl>div { display:grid; grid-template-columns:85px minmax(0,1fr); gap:10px; padding:7px 0; border-bottom:1px solid #e8edf4; }
+.board-problem-details dt { color:#64748b; font-weight:600; }
+.board-problem-details dd { min-width:0; margin:0; overflow-wrap:anywhere; }
+.board-problem-submissions { max-height:230px; overflow:auto; }
+.board-problem-submission { display:grid; grid-template-columns:27px 128px minmax(0,1fr) 40px 40px; align-items:center; gap:6px; padding:8px 0; border-bottom:1px solid #e8edf4; font-size:11px; white-space:nowrap; }
+.board-problem-submission>span:first-child { color:#64748b; }
+.board-problem-submission time { font-variant-numeric:tabular-nums; font-size:10.5px; }
+.board-problem-verdict { min-width:0; white-space:normal; }
+.board-problem-verdict small { display:inline; margin-left:5px; color:inherit; font-size:9px; }
+.board-problem-language { overflow:hidden; text-overflow:ellipsis; color:#64748b; text-align:right; font-size:10px; }
+.board-problem-loading,.board-problem-empty { display:flex; justify-content:center; align-items:center; gap:8px; margin:0; min-height:48px; color:#64748b; }
+
+.board-problem-page-info { display:flex; justify-content:center; align-items:center; gap:6px; padding-top:8px; color:#64748b; font-size:10px; }

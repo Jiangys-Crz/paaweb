@@ -10,6 +10,7 @@ import com.cwnupaa.backend.utils.SecurityUtils;
 import com.cwnupaa.backend.vo.BulkEmailParseResultVO;
 import com.cwnupaa.backend.vo.BulkEmailRecipientVO;
 import com.cwnupaa.backend.vo.BulkEmailSendResultVO;
+import com.cwnupaa.backend.vo.BulkEmailUserIdentityVO;
 import com.cwnupaa.backend.vo.UserProfileVO;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.http.HttpServletRequest;
@@ -71,8 +72,29 @@ public class BulkEmailController {
     private UserMapper userMapper;
 
     @GetMapping("/template")
-    public void downloadTemplate(HttpServletRequest request, HttpServletResponse response) throws Exception {
+    public void downloadTemplate(@RequestParam(defaultValue = "email") String mode, HttpServletRequest request, HttpServletResponse response) throws Exception {
         requireSuperAdmin(request);
+
+        if ("schoolNumber".equals(mode)) {
+            try (Workbook workbook = new XSSFWorkbook()) {
+                Sheet sheet = workbook.createSheet("学校学号名单");
+                Row header = sheet.createRow(0);
+                header.createCell(0).setCellValue("学校");
+                header.createCell(1).setCellValue("学号");
+                var text = workbook.createCellStyle();
+                text.setDataFormat(workbook.createDataFormat().getFormat("@"));
+                sheet.setDefaultColumnStyle(1, text);
+                Row sample = sheet.createRow(1);
+                sample.createCell(0).setCellValue("示例大学");
+                sample.createCell(1).setCellValue("00123456");
+                sheet.setColumnWidth(0, 32 * 256);
+                sheet.setColumnWidth(1, 24 * 256);
+                response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+                response.setHeader("Content-Disposition", "attachment; filename*=UTF-8''" + URLEncoder.encode("站内用户学校学号模板.xlsx", StandardCharsets.UTF_8).replace("+", "%20"));
+                try (ServletOutputStream out = response.getOutputStream()) { workbook.write(out); }
+            }
+            return;
+        }
 
         try (Workbook workbook = new XSSFWorkbook()) {
             Sheet sheet = workbook.createSheet("批量邮件发送名单");
@@ -103,7 +125,8 @@ public class BulkEmailController {
     }
 
     @PostMapping(value = "/parse", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Result<BulkEmailParseResultVO> parseRecipients(@RequestParam("file") MultipartFile file, HttpServletRequest request) {
+    public Result<BulkEmailParseResultVO> parseRecipients(@RequestParam("file") MultipartFile file,
+            @RequestParam(defaultValue = "email") String mode, HttpServletRequest request) {
         try {
             requireSuperAdmin(request);
             if (file == null || file.isEmpty()) return Result.error("请上传 Excel 文件");
@@ -113,6 +136,13 @@ public class BulkEmailController {
             if (!(lowerFilename.endsWith(".xlsx") || lowerFilename.endsWith(".xls"))) {
                 return Result.error("仅支持 .xls 或 .xlsx 文件");
             }
+
+            if ("schoolNumber".equals(mode)) {
+                try (Workbook workbook = WorkbookFactory.create(file.getInputStream())) {
+                    return Result.success(matchSchoolNumberRows(readSchoolNumberWorkbook(workbook)));
+                }
+            }
+            if (!"email".equals(mode)) return Result.error("不支持的导入方式");
 
             BulkEmailParseResultVO result = new BulkEmailParseResultVO();
             List<BulkEmailRecipientVO> recipients = new ArrayList<>();
@@ -167,6 +197,8 @@ public class BulkEmailController {
             return Result.success(result);
         } catch (SecurityException e) {
             return Result.error(403, e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
         } catch (Exception e) {
             org.slf4j.LoggerFactory.getLogger(BulkEmailController.class).warn("操作失败，请检查请求参数和服务配置");
             return Result.error("Excel 解析失败，请检查文件内容");
@@ -240,6 +272,127 @@ public class BulkEmailController {
         } catch (SecurityException e) {
             return Result.error(403, e.getMessage());
         }
+    }
+
+    @PostMapping("/users/batch-by-school-number")
+    public Result<BulkEmailParseResultVO> batchSiteUsersBySchoolNumber(@RequestBody Map<String, String> payload, HttpServletRequest request) {
+        try {
+            requireSuperAdmin(request);
+            String content = payload == null ? null : payload.get("content");
+            if (!StringUtils.hasText(content)) return Result.error("请填写学校和学号，每行一人");
+            if (content.getBytes(StandardCharsets.UTF_8).length > MAX_IMPORT_FILE_SIZE) return Result.error("导入内容不能超过 5MB");
+            List<SchoolNumberRow> rows = new ArrayList<>();
+            String[] lines = content.split("\\R", -1);
+            for (int index = 0; index < lines.length; index++) {
+                String line = lines[index].trim();
+                if (line.isEmpty()) continue;
+                String[] parts = line.split("[\\t,，+＋]", -1);
+                if (parts.length == 1) {
+                    var matcher = Pattern.compile("^(.+?)[\\s\\u3000]+([^\\s\\u3000]+)$").matcher(line);
+                    if (matcher.matches()) parts = new String[]{matcher.group(1), matcher.group(2)};
+                }
+                String school = parts[0].trim();
+                String number = parts.length > 1 ? parts[1].trim() : "";
+                if (rows.isEmpty() && isSchoolHeader(school) && isNumberHeader(number)) continue;
+                Map<String, String> fields = new LinkedHashMap<>();
+                fields.put("学校", school); fields.put("学号", number);
+                rows.add(new SchoolNumberRow(index + 1, school, number, fields,
+                        parts.length == 2 ? null : "每行请填写学校和学号两列"));
+                if (rows.size() > MAX_RECIPIENTS) return Result.error("单次最多支持 " + MAX_RECIPIENTS + " 位收件人");
+            }
+            return Result.success(matchSchoolNumberRows(rows));
+        } catch (SecurityException e) {
+            return Result.error(403, e.getMessage());
+        } catch (IllegalArgumentException e) {
+            return Result.error(e.getMessage());
+        }
+    }
+
+    private record SchoolNumberRow(int rowNumber, String school, String number, Map<String, String> fields, String error) {}
+    private record SchoolNumber(String school, String number) {}
+
+    private boolean isSchoolHeader(String value) {
+        return Set.of("学校", "学校名称", "大学", "大学名称", "school", "university", "universityname").contains(value.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private boolean isNumberHeader(String value) {
+        return Set.of("学号", "工号", "学号/工号", "numberid", "studentid", "student_id").contains(value.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private List<SchoolNumberRow> readSchoolNumberWorkbook(Workbook workbook) {
+        if (workbook.getNumberOfSheets() == 0) throw new IllegalArgumentException("Excel 中没有可导入的名单");
+        Sheet sheet = workbook.getSheetAt(0);
+        DataFormatter formatter = new DataFormatter();
+        Row header = sheet.getRow(sheet.getFirstRowNum());
+        int schoolColumn = -1, numberColumn = -1;
+        if (header != null) for (Cell cell : header) {
+            String text = trimCell(cell, formatter);
+            if (isSchoolHeader(text)) schoolColumn = cell.getColumnIndex();
+            if (isNumberHeader(text)) numberColumn = cell.getColumnIndex();
+        }
+        if (schoolColumn < 0 || numberColumn < 0) throw new IllegalArgumentException("Excel 必须包含“学校”和“学号”表头");
+        Map<Integer, String> headers = readHeaders(header, formatter);
+        List<SchoolNumberRow> rows = new ArrayList<>();
+        for (int index = sheet.getFirstRowNum() + 1; index <= sheet.getLastRowNum(); index++) {
+            Row row = sheet.getRow(index);
+            if (row == null) continue;
+            Map<String, String> fields = new LinkedHashMap<>();
+            headers.forEach((column, name) -> fields.put(name, trimCell(row.getCell(column), formatter)));
+            if (fields.values().stream().noneMatch(StringUtils::hasText)) continue;
+            rows.add(new SchoolNumberRow(index + 1, trimCell(row.getCell(schoolColumn), formatter),
+                    trimCell(row.getCell(numberColumn), formatter), fields, null));
+            if (rows.size() > MAX_RECIPIENTS) throw new IllegalArgumentException("单次最多支持 " + MAX_RECIPIENTS + " 位收件人");
+        }
+        return rows;
+    }
+
+    private BulkEmailParseResultVO matchSchoolNumberRows(List<SchoolNumberRow> rows) {
+        if (rows.isEmpty()) throw new IllegalArgumentException("没有可导入的学校学号记录");
+        List<String> schools = rows.stream().filter(row -> row.error() == null && StringUtils.hasText(row.school()) && StringUtils.hasText(row.number()))
+                .map(SchoolNumberRow::school).distinct().toList();
+        List<String> numbers = rows.stream().filter(row -> row.error() == null && StringUtils.hasText(row.school()) && StringUtils.hasText(row.number()))
+                .map(SchoolNumberRow::number).distinct().toList();
+        Map<SchoolNumber, List<BulkEmailUserIdentityVO>> matches = new LinkedHashMap<>();
+        for (int offset = 0; offset < numbers.size(); offset += 500) {
+            for (BulkEmailUserIdentityVO user : userMapper.selectBulkEmailIdentities(schools, numbers.subList(offset, Math.min(numbers.size(), offset + 500)))) {
+                matches.computeIfAbsent(new SchoolNumber(user.getUniversityName(), user.getNumberId()), key -> new ArrayList<>()).add(user);
+            }
+        }
+        Map<String, BulkEmailRecipientVO> recipients = new LinkedHashMap<>();
+        List<BulkEmailRecipientVO> invalid = new ArrayList<>();
+        Set<String> keywords = new LinkedHashSet<>(List.of("姓名", "学校", "学号", "学号/工号", "邮件地址", "用户名", "账号"));
+        for (SchoolNumberRow row : rows) {
+            Map<String, String> fields = new LinkedHashMap<>(row.fields());
+            fields.put("学校", row.school()); fields.put("学号", row.number()); fields.put("学号/工号", row.number());
+            keywords.addAll(fields.keySet());
+            String error = row.error();
+            if (error == null && (!StringUtils.hasText(row.school()) || !StringUtils.hasText(row.number()))) error = "学校和学号不能为空";
+            List<BulkEmailUserIdentityVO> candidates = matches.getOrDefault(new SchoolNumber(row.school(), row.number()), List.of());
+            if (error == null && candidates.isEmpty()) error = "未找到该学校和学号对应的站内用户";
+            if (error == null && candidates.size() > 1) error = "学校和学号匹配到多个账号，请核对后再导入";
+            BulkEmailRecipientVO recipient;
+            if (error == null) {
+                BulkEmailUserIdentityVO identity = candidates.get(0);
+                Users user = new Users(); user.setUserId(identity.getUserId()); user.setUserAccount(identity.getUserAccount());
+                user.setUserName(identity.getUserName()); user.setRealName(identity.getRealName());
+                user.setNumberId(identity.getNumberId()); user.setEmail(identity.getEmail());
+                recipient = toRecipient(user);
+                fields.putAll(recipient.getFields());
+                recipient.setFields(fields);
+                error = validateRecipient(recipient);
+                if (!StringUtils.hasText(recipient.getEmail())) error = "该用户尚未绑定邮箱";
+            } else {
+                recipient = newRecipient(row.rowNumber(), fields.getOrDefault("姓名", ""), "", error, fields);
+                recipient.setNumberId(row.number());
+            }
+            recipient.setRowNumber(row.rowNumber());
+            if (error == null) recipients.putIfAbsent(recipient.getEmail().toLowerCase(java.util.Locale.ROOT), recipient);
+            else { recipient.setError(error); invalid.add(recipient); }
+        }
+        BulkEmailParseResultVO result = new BulkEmailParseResultVO();
+        result.setRecipients(new ArrayList<>(recipients.values())); result.setInvalidRecipients(invalid);
+        result.setKeywords(new ArrayList<>(keywords));
+        return result;
     }
 
     @PostMapping("/send")

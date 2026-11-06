@@ -10,6 +10,7 @@ import axios from 'axios';
 import { userCardHtml, userSearchLabel } from '@/types/user';
 import ImportPreview, { ImportPreviewData } from './components/ImportPreview';
 import { downloadExcelTemplate, readExcelRows, rowsToTsv } from '@/utils/excelImport';
+import { describeRequestError } from '@/utils/errorMessage';
 
 const MEMBER_IMPORT_HEADERS = ['部门', '职位', '姓名', '学校', '学号'];
 
@@ -31,6 +32,12 @@ interface ImageItem {
     theme?: 'light' | 'dark';
     academicYear?: string;
     sortOrder?: number;
+}
+
+interface EditorImageUploadResponse {
+    code: number;
+    data?: number | string;
+    msg?: string;
 }
 
 type IntroCategory = 'showcase_bg' | 'honors' | 'association' | 'rules' | 'association_member' | 'system_config';
@@ -196,6 +203,43 @@ const IntroManagement: React.FC<{ initialCategory?: IntroCategory }> = ({ initia
         const newItems = [...imageItems];
         newItems[index] = { ...newItems[index], [field]: value };
         setImageItems(newItems);
+    };
+
+    const uploadEditorImages = async (files: File[], callback: (urls: string[]) => void) => {
+        const results = await Promise.allSettled(files.map(async (file) => {
+            if (!/\.(png|jpe?g|gif)$/i.test(file.name)) {
+                throw new Error('仅支持 PNG、JPG、JPEG、GIF 图片');
+            }
+            if (file.size > 5 * 1024 * 1024) {
+                throw new Error('图片大小不能超过 5MiB');
+            }
+            const body = new FormData();
+            body.append('file', file);
+            const response = await axios.post<EditorImageUploadResponse>('/api/file/upload', body, {
+                withCredentials: true,
+            });
+            if (response.data.code !== 200) {
+                throw new Error(response.data.msg || '图片上传失败');
+            }
+            const fileId = response.data.data;
+            if ((typeof fileId === 'number' && !Number.isSafeInteger(fileId))
+                || !/^[1-9]\d*$/.test(String(fileId ?? ''))) {
+                throw new Error('服务器未返回有效的图片编号，请重试');
+            }
+            return `/api/file/image/${fileId}`;
+        }));
+
+        const urls: string[] = [];
+        const failures: string[] = [];
+        results.forEach((result, index) => {
+            if (result.status === 'fulfilled') urls.push(result.value);
+            else failures.push(`${files[index].name}：${describeRequestError(result.reason,
+                result.reason instanceof Error ? result.reason.message : '图片上传失败')}`);
+        });
+        // Always release the editor's upload state and insert each successful image,
+        // even when another file in the same batch failed.
+        callback(urls);
+        if (failures.length) message.error(failures.join('；'));
     };
 
     const getUploadProps = (index: number): UploadProps => ({
@@ -1000,7 +1044,7 @@ const IntroManagement: React.FC<{ initialCategory?: IntroCategory }> = ({ initia
                     </Button>
                 </div>
             ) : (
-                <MdEditor ref={editorRef} modelValue={content} onChange={setContent} style={{ height: 'calc(100vh - 320px)' }} />
+                <MdEditor ref={editorRef} modelValue={content} onChange={setContent} onUploadImg={uploadEditorImages} style={{ height: 'calc(100vh - 320px)' }} />
             )}
 
             <Modal title="动态搜索用户" open={isUserModalOpen} onCancel={() => setIsUserModalOpen(false)} footer={null} destroyOnClose>

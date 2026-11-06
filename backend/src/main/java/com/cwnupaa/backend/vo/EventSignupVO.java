@@ -1,5 +1,6 @@
 package com.cwnupaa.backend.vo;
 
+import com.cwnupaa.backend.utils.AdvisorNames;
 import java.time.LocalDateTime;
 
 public class EventSignupVO {
@@ -18,6 +19,13 @@ public class EventSignupVO {
     private String majorName;
     private String schoolName;
     private String universityName;
+    private String organization;
+    private String organizationLogo;
+
+    public String getOrganization() { return organization; }
+    public void setOrganization(String value) { organization = value; }
+    public String getOrganizationLogo() { return organizationLogo; }
+    public void setOrganizationLogo(String value) { organizationLogo = value; }
 
     private String membersContent;
 
@@ -160,11 +168,11 @@ public class EventSignupVO {
     }
 
     public String getAdvisor() {
-        return advisor;
+        return AdvisorNames.normalize(advisor);
     }
 
     public void setAdvisor(String advisor) {
-        this.advisor = advisor;
+        this.advisor = AdvisorNames.normalize(advisor);
     }
 
     public Integer getIsRanking() {

@@ -20,6 +20,7 @@ import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.HandlerInterceptor;
+import org.springframework.web.servlet.HandlerMapping;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -53,6 +54,11 @@ public class LoginInterceptor implements HandlerInterceptor {
         }
 
         String uri = request.getRequestURI();
+        // Spring can match an encoded path segment to a literal management
+        // route (for example %61dmin to admin). Authorize using the matched
+        // route, not just the undecoded request URI, whenever it is administrative.
+        Object matched = request.getAttribute(HandlerMapping.BEST_MATCHING_PATTERN_ATTRIBUTE);
+        if (matched != null && hasAdminSegment(matched.toString())) uri = matched.toString();
         String method = request.getMethod();
         HttpSession session = request.getSession(false);
         UserProfileVO user = (session != null) ? (UserProfileVO) session.getAttribute("user") : null;
@@ -123,13 +129,10 @@ public class LoginInterceptor implements HandlerInterceptor {
             return true;
         }
 
-        boolean isCertificateGrantAdminPath = uri.startsWith("/certificate/grant/")
-                && !isPathOrChild(uri, "/certificate/grant/public")
-                && !isPathOrChild(uri, "/certificate/grant/my")
-                && !isPathOrChild(uri, "/certificate/grant/download")
-                && !isPathOrChild(uri, "/certificate/grant/preview");
-        boolean isAdminPath = uri.startsWith("/admin") || uri.contains("/admin/") || uri.endsWith("/admin")
-                || isCertificateGrantAdminPath;
+        // Resolver authentication is its per-board password, checked by the service.
+        if ("POST".equalsIgnoreCase(method) && uri.matches("/leaderboard/[0-9]+/resolver")) return true;
+
+        boolean isAdminPath = isAdministrativePath(uri);
 
         if ("GET".equalsIgnoreCase(method) && "/user/me".equals(uri)) return true;
 
@@ -246,6 +249,11 @@ public class LoginInterceptor implements HandlerInterceptor {
                 return sendJsonError(response, 403, "仅超级管理员可使用批量邮件发送功能");
             }
             
+            if (uri.equals("/admin/org/info") || uri.startsWith("/admin/org/info/")) {
+                if (isSuperAdmin) return true;
+                return sendJsonError(response, 403, "仅超级管理员可管理组织标识");
+            }
+
             // Route matching
             if ((uri.contains("/admin/notice") || uri.contains("/notice/admin")) && perms.contains("manage_notice")) return true;
             if ((uri.contains("/admin/training") || uri.contains("/training/admin")) && perms.contains("manage_training")) return true;
@@ -285,6 +293,19 @@ public class LoginInterceptor implements HandlerInterceptor {
 
     private boolean isPathOrChild(String uri, String path) {
         return uri.equals(path) || uri.startsWith(path + "/");
+    }
+
+    private boolean isAdministrativePath(String uri) {
+        boolean certificateGrant = uri.startsWith("/certificate/grant/")
+                && !isPathOrChild(uri, "/certificate/grant/public")
+                && !isPathOrChild(uri, "/certificate/grant/my")
+                && !isPathOrChild(uri, "/certificate/grant/download")
+                && !isPathOrChild(uri, "/certificate/grant/preview");
+        return hasAdminSegment(uri) || certificateGrant;
+    }
+
+    private boolean hasAdminSegment(String uri) {
+        return uri.startsWith("/admin") || uri.contains("/admin/") || uri.endsWith("/admin");
     }
 
     private List<String> loadPermissions(Users dbUser) {

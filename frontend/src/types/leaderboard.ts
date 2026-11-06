@@ -1,4 +1,5 @@
 export interface ExternalBoardConfig {
+  configSection?: 'board' | 'resolver';
   boardId: number;
   name: string;
   eventId: number;
@@ -7,6 +8,16 @@ export interface ExternalBoardConfig {
   actualStartTime: string | null;
   actualEndTime: string | null;
   freezeTime?: string | null;
+  organizationDisplay?: 'school' | 'university';
+  resolverEnabled?: boolean;
+  resolverPasswordSet?: boolean;
+  resolverPassword?: string;
+  resolverSingleStep?: boolean;
+  resolverSpeed?: number;
+  resolverSettings?: {
+    awards: { showMedals: boolean; showPodium?: boolean; championLabel?: string; runnerUpLabel?: string; secondRunnerUpLabel?: string; firstToSolve: boolean; solvedCount: boolean; bestFemaleTeam: boolean; bestFemaleLabel: string; goldLabel: string; silverLabel: string; bronzeLabel: string; customAwards: { citation: string; participantIds: number[]; displayMode: 'detail' | 'list' | 'photos' }[] };
+    display: { rowsPerScreen: number; nameTemplate?: string; theme: 'dark' | 'light'; showOrganizationLogo: boolean; showTeamPhoto: boolean; showOrganization: boolean; showMembers: boolean };
+  };
   medalConfig: {
     gold: number;
     silver: number;
@@ -27,6 +38,7 @@ export interface BoardVO {
     boardId: number;
     eventId: number;
     title: string;
+    sessionName?: string;
     type: 'XCPC' | 'GPLT' | 'LANQIAO'; 
     status: 'PENDING' | 'RUNNING' | 'FROZEN' | 'ENDED';
     unfrozen?: boolean;
@@ -76,7 +88,15 @@ export interface RankItem {
   members?: string;
   memberInfos?: MemberInfo[];
   avatar?: string;
-  organization?: string; 
+  photo?: string;
+  photoThumbnail?: string;
+  hasTeamPhoto?: boolean;
+  advisor?: string;
+  coach?: string;
+  englishName?: string;
+  firstSolveIds?: string[];
+  organization?: string;
+  organizationLogo?: string;
   isStar?: boolean;      
   isGirl?: boolean;
   medal?: 'Gold' | 'Silver' | 'Bronze';
@@ -93,8 +113,10 @@ export interface RankItem {
 
 export interface ProblemStatus {
   status: 'AC' | 'WA' | 'PENDING' | 'NONE' | 'Scored';
-  score?: number;     
-  time?: number;     
+  score?: number;
+  maxScore?: number;
+  time?: number;
+  timeMillis?: number;
   tryCount?: number;  
   isFirstAc?: boolean;
 }
@@ -122,10 +144,10 @@ export interface SubmissionVO {
     
     scoreDisplay?: string;
     
-    time: number;         
-    memory: number;      
-    length: number;      
-    language: string;
+    time: number | string;
+    memory: number | string;
+    length?: number;
+    language?: string;
     submitTime: string;
 }
 export interface ExternalBoardSummary {

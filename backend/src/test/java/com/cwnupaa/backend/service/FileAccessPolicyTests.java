@@ -80,6 +80,15 @@ class FileAccessPolicyTests {
     }
 
     @Test
+    void collegeLogoIsPublicAndCannotBeDeletedWhileReferenced() throws Exception {
+        SchoolMapper schools = dependency("schoolMapper");
+        when(schools.selectCount(any())).thenReturn(1L);
+        assertThat(policy.canAccess(file, null)).isTrue();
+        assertThat(policy.deleteOwnedUnreferenced(90L, owner)).contains("仍被业务引用");
+        verify(files, never()).deleteById(anyLong());
+    }
+
+    @Test
     void anEditorCannotPublishAnotherUploadByUsingItsNumericIdOrLegacyPath() {
         UserProfileVO other = actor(8L);
         assertThat(policy.validatePublicFiles(List.of(90L), other)).contains("自己上传");

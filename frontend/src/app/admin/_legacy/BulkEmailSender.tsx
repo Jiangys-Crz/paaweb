@@ -47,6 +47,12 @@ interface SendResult {
   failedRecipients: Recipient[];
 }
 
+interface ImportResult {
+  recipients: Recipient[];
+  invalidRecipients: Recipient[];
+  keywords: string[];
+}
+
 /** 每批发送的收件人数：单批耗时控制在 1 分钟内，避免触发网关/浏览器超时。 */
 const CHUNK_SIZE = 50;
 /** 估算用时用的保守值（含 TLS 握手，实测约 1~1.5 秒/封）。 */
@@ -73,6 +79,8 @@ const BulkEmailSender: React.FC = () => {
   const [unfinished, setUnfinished] = useState<Recipient[]>([]);
   const [keywords, setKeywords] = useState<string[]>([]);
   const [siteUsernames, setSiteUsernames] = useState('');
+  const [siteImportMode, setSiteImportMode] = useState<'username' | 'schoolNumber'>('username');
+  const [schoolNumbers, setSchoolNumbers] = useState('');
   const [loadingBatchUsers, setLoadingBatchUsers] = useState(false);
 
   const dedupedRecipients = useMemo(() => {
@@ -179,6 +187,54 @@ const BulkEmailSender: React.FC = () => {
       }
     } finally {
       setLoadingBatchUsers(false);
+    }
+  };
+
+  const addSchoolNumberImport = (result: ImportResult) => {
+    addRecipients(result.recipients || []);
+    setInvalidRecipients(result.invalidRecipients || []);
+    setKeywords(previous => Array.from(new Set([...previous, ...(result.keywords || [])])));
+    setSendResult(null);
+    const count = result.recipients?.length || 0;
+    if (count) message.success(`已匹配并加入 ${count} 位站内用户`);
+    else message.warning('没有可加入的用户，请查看下方未加入的导入记录');
+  };
+
+  const loadSchoolNumberUsers = async () => {
+    if (!schoolNumbers.trim()) {
+      message.warning('请填写学校和学号，每行一人');
+      return;
+    }
+    setLoadingBatchUsers(true);
+    try {
+      const res = await axios.post('/api/admin/bulk-email/users/batch-by-school-number', { content: schoolNumbers });
+      if (res.data.code === 200) addSchoolNumberImport(res.data.data);
+      else message.error(res.data.msg || '学校学号导入失败');
+    } catch {
+      message.error('学校学号导入失败，请重试');
+    } finally {
+      setLoadingBatchUsers(false);
+    }
+  };
+
+  const parseSchoolNumberExcel: NonNullable<React.ComponentProps<typeof Upload>['customRequest']> = async options => {
+    const formData = new FormData();
+    formData.append('file', options.file as File);
+    setUploading(true);
+    try {
+      const res = await axios.post('/api/admin/bulk-email/parse', formData, { params: { mode: 'schoolNumber' } });
+      if (res.data.code === 200) {
+        addSchoolNumberImport(res.data.data);
+        options.onSuccess?.(res.data);
+      } else {
+        message.error(res.data.msg || '学校学号表格导入失败');
+        options.onError?.(new Error(res.data.msg || '导入失败'));
+      }
+    } catch (error) {
+      message.error('学校学号表格导入失败，请重试');
+      options.onError?.(error as Error);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -325,6 +381,7 @@ const BulkEmailSender: React.FC = () => {
 
   const columns: ColumnsType<Recipient> = [
     { title: '姓名', dataIndex: 'name', width: 140 },
+    { title: '学校', width: 160, render: (_, record) => record.fields?.['学校'] || '-' },
     { title: '邮件地址', dataIndex: 'email', ellipsis: true },
     { title: '学号/工号', dataIndex: 'numberId', width: 140, render: (value?: string) => value || '-' },
     {
@@ -343,6 +400,8 @@ const BulkEmailSender: React.FC = () => {
 
   const invalidColumns: ColumnsType<Recipient> = [
     { title: '行号', dataIndex: 'rowNumber', width: 80 },
+    { title: '学校', width: 160, render: (_, record) => record.fields?.['学校'] || '-' },
+    { title: '学号/工号', dataIndex: 'numberId', width: 140 },
     { title: '姓名', dataIndex: 'name', width: 140 },
     { title: '邮件地址', dataIndex: 'email' },
     { title: '原因', dataIndex: 'error', width: 180 },
@@ -424,15 +483,39 @@ const BulkEmailSender: React.FC = () => {
                     label: `${item.name} ${item.numberId ? `(${item.numberId})` : ''} - ${item.email}`,
                   }))}
                 />
-                <Input.TextArea
-                  value={siteUsernames}
-                  onChange={e => setSiteUsernames(e.target.value)}
-                  placeholder="批量输入用户名，每行一个，例如：\nzhangsan\nlisi123"
-                  autoSize={{ minRows: 4, maxRows: 8 }}
+                <Radio.Group
+                  value={siteImportMode}
+                  onChange={event => setSiteImportMode(event.target.value)}
+                  options={[{ label: '按用户名', value: 'username' }, { label: '按学校＋学号', value: 'schoolNumber' }]}
                 />
-                <Button loading={loadingBatchUsers} onClick={loadBatchSiteUsers} icon={<UserAddOutlined />}>
-                  按用户名批量加入
-                </Button>
+                {siteImportMode === 'username' ? <>
+                  <Input.TextArea
+                    value={siteUsernames}
+                    onChange={e => setSiteUsernames(e.target.value)}
+                    placeholder="批量输入用户名，每行一个，例如：\nzhangsan\nlisi123"
+                    autoSize={{ minRows: 4, maxRows: 8 }}
+                  />
+                  <Button loading={loadingBatchUsers} onClick={loadBatchSiteUsers} icon={<UserAddOutlined />}>
+                    按用户名批量加入
+                  </Button>
+                </> : <>
+                  <Text type="secondary">填写学校全称（大学）和学号，每行一人，可直接粘贴 Excel 两列，也支持用空格、逗号或＋分隔。系统自动读取站内绑定邮箱。</Text>
+                  <Input.TextArea
+                    aria-label="学校和学号导入名单"
+                    value={schoolNumbers}
+                    onChange={event => setSchoolNumbers(event.target.value)}
+                    placeholder={'学校\t学号\n示例大学\t00123456'}
+                    autoSize={{ minRows: 4, maxRows: 8 }}
+                  />
+                  <Button loading={loadingBatchUsers} onClick={loadSchoolNumberUsers} icon={<UserAddOutlined />}>按学校＋学号批量加入</Button>
+                  <Space wrap>
+                    <Button icon={<DownloadOutlined />} onClick={() => window.open('/api/admin/bulk-email/template?mode=schoolNumber', '_blank')}>下载学校学号模板</Button>
+                    <Upload accept=".xls,.xlsx" maxCount={1} customRequest={parseSchoolNumberExcel} showUploadList={false} disabled={uploading}>
+                      <Button loading={uploading} icon={<UploadOutlined />}>导入学校学号 Excel</Button>
+                    </Upload>
+                  </Space>
+                  {invalidRecipients.length > 0 && <Alert type="warning" showIcon title={`${invalidRecipients.length} 条记录未加入，请核对下方原因`} />}
+                </>}
                 <Text type="secondary">搜索结果仅展示已绑定有效邮箱的用户。</Text>
               </Space>
             )}
@@ -448,7 +531,7 @@ const BulkEmailSender: React.FC = () => {
                 columns={columns}
                 dataSource={dedupedRecipients}
                 pagination={{ pageSize: 6, size: 'small' }}
-                scroll={{ x: 560 }}
+                scroll={{ x: 720 }}
               />
             </div>
           </Space>
@@ -497,8 +580,8 @@ const BulkEmailSender: React.FC = () => {
 
       {invalidRecipients.length > 0 && (
         <div style={{ border: '1px solid #faad14', borderRadius: 8, padding: 16 }}>
-          <Title level={5} style={{ marginTop: 0 }}>Excel 无效数据</Title>
-          <Table size="small" rowKey={(record) => `${record.rowNumber}-${record.email}`} columns={invalidColumns} dataSource={invalidRecipients} pagination={{ pageSize: 5 }} />
+          <Title level={5} style={{ marginTop: 0 }}>未加入的导入记录</Title>
+          <Table size="small" rowKey={(record) => `${record.rowNumber}-${record.email}`} columns={invalidColumns} dataSource={invalidRecipients} pagination={{ pageSize: 5 }} scroll={{ x: 800 }} />
         </div>
       )}
 

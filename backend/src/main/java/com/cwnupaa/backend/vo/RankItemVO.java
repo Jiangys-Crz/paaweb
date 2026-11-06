@@ -1,5 +1,6 @@
 package com.cwnupaa.backend.vo;
 
+import com.cwnupaa.backend.utils.AdvisorNames;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 
 import java.util.List;
@@ -13,8 +14,25 @@ public class RankItemVO {
     private List<Long> memberIds;
     private List<MemberInfo> memberInfos;
     private String avatar;
+    private String photo;
+    private String photoThumbnail;
+    private Boolean hasTeamPhoto;
+    public String getPhoto() { return photo; }
+    public void setPhoto(String value) { photo=value; }
+    public String getPhotoThumbnail() { return photoThumbnail; }
+    public void setPhotoThumbnail(String value) { photoThumbnail=value; }
+    public Boolean getHasTeamPhoto() { return hasTeamPhoto; }
+    public void setHasTeamPhoto(Boolean value) { hasTeamPhoto=value; }
 
     private String organization;
+    private String organizationLogo;
+    public String getOrganizationLogo() { return organizationLogo; }
+    public void setOrganizationLogo(String value) { organizationLogo = value; }
+    private String advisor;
+
+    public String getAdvisor() { return AdvisorNames.normalize(advisor); }
+    public void setAdvisor(String advisor) { this.advisor = AdvisorNames.normalize(advisor); }
+    public String getCoach() { return AdvisorNames.normalize(advisor); }
     private Boolean isStar;
     private Boolean isGirl;
 
@@ -179,7 +197,13 @@ public class RankItemVO {
     public static class ProblemStatus {
         private String status;
         private Integer score;
+        private Integer maxScore;
+        public Integer getMaxScore() { return maxScore; }
+        public void setMaxScore(Integer value) { maxScore = value; }
         private Long time;
+        private Long timeMillis;
+        public Long getTimeMillis() { return timeMillis; }
+        public void setTimeMillis(Long value) { timeMillis = value; }
         private Integer tryCount;
         private Boolean isFirstAc;
 

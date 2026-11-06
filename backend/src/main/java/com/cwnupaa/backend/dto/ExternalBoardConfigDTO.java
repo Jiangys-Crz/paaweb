@@ -8,6 +8,33 @@ import java.util.List;
 
 public class ExternalBoardConfigDTO {
     private Long boardId;
+    private String configSection;
+    public String getConfigSection() { return configSection; }
+    public void setConfigSection(String value) { configSection = value; }
+    private String organizationDisplay;
+    public String getOrganizationDisplay() { return organizationDisplay; }
+    public void setOrganizationDisplay(String value) { organizationDisplay = value; }
+    private Boolean resolverSingleStep;
+    private Double resolverSpeed;
+    private ResolverSettingsDTO resolverSettings;
+    public ResolverSettingsDTO getResolverSettings() { return resolverSettings; }
+    public void setResolverSettings(ResolverSettingsDTO value) { resolverSettings = value; }
+    public Boolean getResolverSingleStep() { return resolverSingleStep; }
+    public void setResolverSingleStep(Boolean value) { resolverSingleStep = value; }
+    public Double getResolverSpeed() { return resolverSpeed; }
+    public void setResolverSpeed(Double value) { resolverSpeed = value; }
+    private Boolean resolverEnabled;
+    private Boolean resolverPasswordSet;
+    @com.fasterxml.jackson.annotation.JsonProperty(access = com.fasterxml.jackson.annotation.JsonProperty.Access.WRITE_ONLY)
+    private String resolverPassword;
+
+    public Boolean getResolverEnabled() { return resolverEnabled; }
+    public void setResolverEnabled(Boolean value) { resolverEnabled = value; }
+    public Boolean getResolverPasswordSet() { return resolverPasswordSet; }
+    public void setResolverPasswordSet(Boolean value) { resolverPasswordSet = value; }
+    public String getResolverPassword() { return resolverPassword; }
+    public void setResolverPassword(String value) { resolverPassword = value; }
+
 
     public Long getBoardId() { return boardId; }
     public void setBoardId(Long boardId) { this.boardId = boardId; }

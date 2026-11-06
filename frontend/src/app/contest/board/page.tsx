@@ -35,7 +35,7 @@ export default function BoardListPage() {
     }).catch(() => setError('榜单加载失败，请刷新页面重试。')).finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => list.filter(item => `${item.name} ${item.eventName}`.toLowerCase().includes(keyword.toLowerCase())), [keyword, list]);
+  const filtered = useMemo(() => list.filter(item => `${item.eventName} - ${item.name}`.toLowerCase().includes(keyword.toLowerCase())), [keyword, list]);
 
   return (
     <ActivityLayout>
@@ -55,13 +55,13 @@ export default function BoardListPage() {
                       <Col xs={24} md={18}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
                           <Text strong className="activity-list-title" style={{ margin: 0, fontSize: 18, color: '#17212b' }}>
-                            {item.name}
+                            {item.eventName} - {item.name}
                           </Text>
                           <Tag color="orange" style={{ margin: 0 }}>外榜</Tag>
                           {getStatusTag(item)}
                           {item.type && <Tag color="geekblue" style={{ margin: 0 }}>{item.type}</Tag>}
                         </div>
-                        <p style={{ marginBottom: 10, color: '#62798c' }}>所属比赛：{item.eventName}</p>
+                        <p style={{ marginBottom: 10, color: '#62798c' }}>外榜场次：{item.name}</p>
                         <Space wrap className="activity-meta-row" style={{ marginBottom: 0, gap: '8px 16px' }}>
                           <span><CalendarOutlined /> 比赛：{dayjs(item.actualStartTime || item.eventStart).format('YYYY-MM-DD HH:mm')} ~ {dayjs(item.actualEndTime || item.eventEnd).format('YYYY-MM-DD HH:mm')}</span>
                           <span><UserOutlined /> 参赛数：{item.signupCount || 0} {item.isTeam ? '队' : '人'}</span>

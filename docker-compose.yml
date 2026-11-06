@@ -59,6 +59,7 @@ services:
     environment:
       API_URL: http://backend:8080
       PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-http://localhost:3403}
+      PUBLIC_VP_SITE_URL: ${PUBLIC_VP_SITE_URL:-}
       NODE_OPTIONS: --max-old-space-size=512
       TZ: ${TZ:-Asia/Shanghai}
     depends_on: [backend]

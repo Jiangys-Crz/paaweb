@@ -42,7 +42,8 @@ class ExternalBoardGateTests {
     }
     @Test void codeStillRequiresContestEndAndUnfreezeForOpenBoards() {
         Event event = new Event(); event.setExternalOpen(true); event.setEventEnd(LocalDateTime.now().plusDays(1)); event.setUnfrozen(true);
-        SubmitRecord record = new SubmitRecord(); record.setEventId(1L); record.setBoardId(1L); record.setCodeContent("public");
+        event.setEventStart(LocalDateTime.now().minusDays(3));
+        SubmitRecord record = new SubmitRecord(); record.setEventId(1L); record.setBoardId(1L); record.setCodeContent("public"); record.setSubmitTime(LocalDateTime.now().minusDays(2));
         when(submissions.selectById(2L)).thenReturn(record); when(events.selectById(1L)).thenReturn(event);
         assertThatThrownBy(() -> service.getSubmissionCode(2L)).hasMessageContaining("running");
         event.setEventEnd(LocalDateTime.now().minusDays(1)); event.setUnfrozen(false);
