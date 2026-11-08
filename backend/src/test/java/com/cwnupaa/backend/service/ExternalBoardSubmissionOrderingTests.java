@@ -92,12 +92,12 @@ class ExternalBoardSubmissionOrderingTests {
         when(teams.selectList(any())).thenReturn(teamSignups);
         when(details.selectList(any())).thenReturn(members);
         when(users.selectBatchIds(any())).thenReturn(people);
-        List<SubmitRecord> records = List.of(
+        List<SubmitRecord> records = new ArrayList<>(List.of(
                 submission(2, "Wrong Answer", 0, 1),
                 submission(3, "Compile Error", 0, 2),
                 submission(5, "Accepted", 100, 5),
                 submission(6, "Accepted", 80, 10),
-                submission(4, "Accepted", 100, 245));
+                submission(4, "Accepted", 100, 245)));
         if ("GPLT".equals(type)) {
             // Member-only submissions must also count as team activity.
             records.forEach(record -> record.setSignupTeamId(null));
@@ -134,7 +134,8 @@ class ExternalBoardSubmissionOrderingTests {
         RankItemVO compileError = rows.stream().filter(row -> row.getItemId() == offset + 3).findFirst().orElseThrow();
         assertThat(compileError.getTotalScore()).isZero();
         assertThat(compileError.getPenaltyMillis() == null ? 0L : compileError.getPenaltyMillis()).isZero();
-        assertThat(compileError.getProblemStatus()).isEmpty();
+        if ("LANQIAO".equals(type)) assertThat(compileError.getProblemStatus().get("A").getScore()).isZero();
+        else assertThat(compileError.getProblemStatus()).isEmpty();
         RankItemVO frozen = rows.stream().filter(row -> row.getItemId() == offset + 4).findFirst().orElseThrow();
         assertThat(frozen.getTotalScore()).isZero();
         if ("XCPC".equals(type)) {
@@ -146,6 +147,25 @@ class ExternalBoardSubmissionOrderingTests {
             assertThat(rows.get(1).getTotalScore()).isEqualTo(80);
         }
         assertThat(new ObjectMapper().writeValueAsString(rows.get(0))).doesNotContain("hasSubmission");
+
+        if ("LANQIAO".equals(type)) {
+            // Later lower scores and CE must replace the old AC, not fall back.
+            records.add(submission(5, "Wrong Answer", 20, 30));
+            assertThat(service.getBoardDetail(7L, null, scope, null, null).getRows())
+                    .filteredOn(row -> row.getItemId() == 105L).extracting(RankItemVO::getTotalScore).containsExactly(20);
+            records.add(submission(5, "Compile Error", 100, 31));
+            assertThat(service.getBoardDetail(7L, null, scope, null, null).getRows())
+                    .filteredOn(row -> row.getItemId() == 105L).extracting(RankItemVO::getTotalScore).containsExactly(0);
+            var upstreamLast = submission(6, "Wrong Answer", 30, 40);
+            upstreamLast.setRid("proctor:z");
+            var arrivedLast = submission(6, "Wrong Answer", 70, 40);
+            arrivedLast.setRid("proctor:a");
+            records.add(upstreamLast);
+            records.add(arrivedLast);
+            records.add(submission(6, "Cancelled", 0, 41));
+            assertThat(service.getBoardDetail(7L, null, scope, null, null).getRows())
+                    .filteredOn(row -> row.getItemId() == 106L).extracting(RankItemVO::getTotalScore).containsExactly(30);
+        }
 
         long replay = start.plusMinutes(1).atZone(ZoneId.systemDefault()).toInstant().toEpochMilli();
         List<RankItemVO> replayRows = service.getBoardDetail(7L, replay, scope, null, null).getRows();

@@ -33,6 +33,7 @@ import java.util.stream.Collectors;
 
 @Service
 public class ExternalBoardService {
+    private static final Set<String> LANQIAO_ZERO_VERDICTS = Set.of("CE", "COMPILE ERROR", "COMPILATION ERROR", "WAITING", "QUEUEING", "JUDGING", "COMPILING", "PENDING");
 
     private final ObjectMapper jsonMapper = new ObjectMapper();
     @Autowired
@@ -433,7 +434,7 @@ public class ExternalBoardService {
 
         QueryWrapper<SubmitRecord> query = new QueryWrapper<>();
         query.eq("board_id", boardId);
-        constrainXcpcTime(query, event);
+        constrainBoardRecords(query, event);
         if (signupTeamId != null) query.eq("signup_team_id", signupTeamId);
         if (userId != null) query.eq("user_id", userId);
         if (timePoint != null) {
@@ -514,7 +515,8 @@ public class ExternalBoardService {
                 vo.setStatus(r.getResult());
                 vo.setScore(r.getScore());
                 int max = problemMaxScores.getOrDefault(r.getProblemId(), 100);
-                int real = (int) Math.ceil((r.getScore() != null ? r.getScore() : 0) * max / 100.0);
+                int real = "LANQIAO".equals(event.getType()) ? lanqiaoScore(r, max)
+                        : (int) Math.ceil((r.getScore() != null ? r.getScore() : 0) * max / 100.0);
                 vo.setScoreDisplay(real + "/" + max);
                 vo.setTime(r.getTimeUsage() != null ? r.getTimeUsage() + " ms" : "-");
                 vo.setMemory(r.getMemoryUsage() != null ? r.getMemoryUsage() + " KB" : "-");
@@ -604,7 +606,7 @@ public class ExternalBoardService {
         vo.setProblems(problemInfos);
 
         QueryWrapper<SubmitRecord> queryWrapper = new QueryWrapper<SubmitRecord>().eq("board_id", boardId).orderByAsc("submit_time", "submit_record_id");
-        constrainXcpcTime(queryWrapper, event);
+        constrainBoardRecords(queryWrapper, event);
         if (timePoint != null) {
             queryWrapper.le("submit_time", now);
         }
@@ -735,7 +737,7 @@ public class ExternalBoardService {
         final boolean isUnfrozen = Boolean.TRUE.equals(event.getUnfrozen());
 
         QueryWrapper<SubmitRecord> queryWrapper = new QueryWrapper<SubmitRecord>().eq("board_id", boardId);
-        constrainXcpcTime(queryWrapper, event);
+        constrainBoardRecords(queryWrapper, event);
         LocalDateTime queryTimeLimit = null;
         if (timePoint != null) {
             queryTimeLimit = now;
@@ -775,7 +777,8 @@ public class ExternalBoardService {
                 Integer maxScore = 0;
                 for (ExternalBoardConfigDTO.ProblemConfig p : problems)
                     if (p.getDisplayId().equals(r.getProblemId())) maxScore = p.getScore();
-                int real = (int) Math.ceil((r.getScore() != null ? r.getScore() : 0) * maxScore / 100.0);
+                int real = "LANQIAO".equals(type) ? lanqiaoScore(r, maxScore)
+                        : (int) Math.ceil((r.getScore() != null ? r.getScore() : 0) * maxScore / 100.0);
                 isAccepted = (real >= maxScore);
             } else {
                 isAccepted = isAc(r.getResult());
@@ -826,6 +829,12 @@ public class ExternalBoardService {
         return stats;
     }
 
+    private int lanqiaoScore(SubmitRecord record, int maximum) {
+        String verdict = record.getResult() == null ? "" : record.getResult().trim().toUpperCase(Locale.ROOT).replace('_', ' ');
+        if (LANQIAO_ZERO_VERDICTS.contains(verdict)) return 0;
+        return (int) Math.round((record.getScore() == null ? 0 : record.getScore()) * (maximum / 100.0));
+    }
+
     private List<RankItemVO> calculateLanqiaoRank(Event event, List<SubmitRecord> records, ExternalBoardConfigDTO config, boolean isAdmin) {
         Map<String, Integer> maxScores = new HashMap<>();
         if (config.getProblems() != null) {
@@ -842,35 +851,30 @@ public class ExternalBoardService {
         if (freezeTime == null)
             freezeTime = (event.getActualEndTime() != null ? event.getActualEndTime() : event.getEventEnd()).minusHours(1);
 
-        for (SubmitRecord r : records) {
+        // LANQIAO uses the latest submission, including CE and pending runs.
+        // Proctor timestamps tie on upstream IDs rather than network arrival order.
+        for (SubmitRecord r : records.stream().sorted(Comparator.comparing(SubmitRecord::getSubmitTime)
+                .thenComparing(r -> r.getRid() != null && r.getRid().startsWith("proctor:") ? r.getRid() : "")
+                .thenComparing(SubmitRecord::getSubmitRecordId, Comparator.nullsFirst(Long::compareTo))).toList()) {
+            if ("Cancelled".equalsIgnoreCase(r.getResult())) continue;
             Long id = getParticipantId(event, r);
             if (id == null || !rankMap.containsKey(id)) continue;
             rankMap.get(id).setHasSubmission(true);
             if (!Boolean.TRUE.equals(event.getUnfrozen()) && r.getSubmitTime().isAfter(freezeTime)) continue;
-            if ("Compile Error".equals(r.getResult()) || "CE".equals(r.getResult())) continue;
 
             finalScores.putIfAbsent(id, new HashMap<>());
             finalTimes.putIfAbsent(id, new HashMap<>());
             Map<String, Integer> pScores = finalScores.get(id);
             Map<String, Long> pTimes = finalTimes.get(id);
             
-            double raw = r.getScore() != null ? r.getScore() : 0;
             int max = maxScores.getOrDefault(r.getProblemId(), 100);
-            int realScore = (int) Math.round((raw / 100.0) * max);
+            int realScore = lanqiaoScore(r, max);
             
             long currentMillis = Duration.between(start, r.getSubmitTime()).toMillis();
             if (currentMillis < 0) currentMillis = 0;
 
-            Integer existingScore = pScores.get(r.getProblemId());
-            if (existingScore == null || realScore > existingScore) {
-                pScores.put(r.getProblemId(), realScore);
-                pTimes.put(r.getProblemId(), currentMillis);
-            } else if (realScore == existingScore) {
-                Long existingTime = pTimes.get(r.getProblemId());
-                if (existingTime == null || currentMillis < existingTime) {
-                    pTimes.put(r.getProblemId(), currentMillis);
-                }
-            }
+            pScores.put(r.getProblemId(), realScore);
+            pTimes.put(r.getProblemId(), currentMillis);
         }
 
         for (Long id : rankMap.keySet()) {
@@ -1420,7 +1424,9 @@ public class ExternalBoardService {
         return !StringUtils.hasText(event.getType()) || "XCPC".equals(event.getType());
     }
 
-    private void constrainXcpcTime(QueryWrapper<SubmitRecord> query, Event event) {
+    private void constrainBoardRecords(QueryWrapper<SubmitRecord> query, Event event) {
+        // Cancelled runs are retractions, not a latest zero-point CE run.
+        if ("LANQIAO".equals(event.getType())) query.and(w -> w.isNull("result").or().ne("result", "Cancelled"));
         if (!isXcpc(event)) return;
         LocalDateTime start = event.getActualStartTime() != null ? event.getActualStartTime() : event.getEventStart();
         LocalDateTime end = event.getActualEndTime() != null ? event.getActualEndTime() : event.getEventEnd();
@@ -1827,13 +1833,18 @@ public class ExternalBoardService {
             problemMap.put(ep.getProblem(), ep);
         }
 
-        // 2. 批量查出已存在的 rid 集合，以便更新或插入
+        // 2. 只读取当前补传批次的身份字段，避免反复载入整场历史代码。
         Map<String, SubmitRecord> existingRecords = new HashMap<>();
-        List<SubmitRecord> allRecords = submitRecordMapper.selectList(new QueryWrapper<SubmitRecord>()
-                .eq("board_id", boardId));
-        for (SubmitRecord r : allRecords) {
-            if (StringUtils.hasText(r.getRid())) {
-                existingRecords.put(r.getRid(), r);
+        List<String> incomingIds = submissions.stream().map(p -> p.get("rid"))
+                .filter(String.class::isInstance).map(String.class::cast).filter(StringUtils::hasText)
+                .distinct().collect(Collectors.toList());
+        for (int offset = 0; offset < incomingIds.size(); offset += 256) {
+            List<String> ids = incomingIds.subList(offset, Math.min(incomingIds.size(), offset + 256));
+            List<SubmitRecord> matches = submitRecordMapper.selectList(new QueryWrapper<SubmitRecord>()
+                    .eq("board_id", boardId).in("rid", ids)
+                    .select("submit_record_id", "rid", "user_id", "signup_team_id"));
+            for (SubmitRecord r : matches) {
+                if (StringUtils.hasText(r.getRid())) existingRecords.put(r.getRid(), r);
             }
         }
 

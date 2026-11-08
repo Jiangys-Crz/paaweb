@@ -64,12 +64,9 @@ export const TrackerService = {
   },
 
   refreshTracker: async (platforms: string[], luoguClientId?: string) => {
-    return axios.post(`${API_PREFIX}/tracker/refresh`, null, {
-      params: { 
-        luoguClientId,
-        platforms: platforms.join(',')
-      }
-    });
+    const body = new URLSearchParams({ platforms: platforms.join(',') });
+    if (luoguClientId?.trim()) body.set('luoguClientId', luoguClientId.trim());
+    return axios.post(`${API_PREFIX}/tracker/refresh`, body);
   },
 
   getDashboard: async (userId?: string | number) => {

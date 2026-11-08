@@ -52,7 +52,15 @@ public class TrackerService {
     @Value("${crawler.service.url:http://localhost:8000}")
     private String crawlerServiceUrl;
 
-    private final Map<String, Long> platformIdMap = new HashMap<>();
+    private final Map<String, Long> platformIdMap = new java.util.concurrent.ConcurrentHashMap<>();
+
+    @Autowired
+    private TrackerSnapshotService trackerSnapshotService;
+
+    private final Object[] externalSyncLocks = java.util.stream.IntStream.range(0, 256)
+            .mapToObj(i -> new Object()).toArray();
+
+    private static final Set<String> EXTERNAL_PLATFORMS = Set.of("CodeForces", "AtCoder", "NowCoder", "Luogu");
 
     @Autowired
     private NotificationService notificationService;
@@ -268,6 +276,9 @@ public class TrackerService {
                         processPlatformSync(userId, account.getLuoguId(), "Luogu", luoguCookie, notifyUser), crawlerExecutor));
             } else {
                 log.info("用户 {} 未缓存洛谷 Cookie，跳过洛谷同步", userId);
+                if (notifyUser && StringUtils.hasText(account.getLuoguId())) {
+                    notificationService.send(userId, 5, "CP Tracker数据同步失败", "平台 [Luogu] 缺少 Cookie，请填写有效 Cookie 后重试，原统计已保留。");
+                }
             }
         }
         if (syncAll || targetPlatforms.contains("CWNU")) {
@@ -282,7 +293,8 @@ public class TrackerService {
         if (StringUtils.hasText(luoguClientId)) {
             String cookie = luoguClientId.trim();
             account.setLuoguClientId(cookie);
-            ojUserAccountMapper.updateById(account);
+            ojUserAccountMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<OjUserAccount>()
+                    .eq("user_id", account.getUserId()).set("luogu_client_id", cookie));
             return cookie;
         }
         return account.getLuoguClientId();
@@ -298,14 +310,23 @@ public class TrackerService {
         }
 
         try {
-            int added = fetchAndSave(userId, handle, platformName, clientId);
+            int added;
+            if (EXTERNAL_PLATFORMS.contains(platformName)) {
+                // Serialize fetch and save, so an older concurrent crawl cannot replace a newer one.
+                synchronized (externalSyncLocks[Math.floorMod(Objects.hash(userId, platformName), externalSyncLocks.length)]) {
+                    added = fetchAndSave(userId, handle.trim(), platformName, clientId);
+                }
+            } else {
+                added = fetchAndSave(userId, handle, platformName, clientId);
+            }
             if (notifyUser && added >= 0) {
                 notificationService.send(userId, 5, "CP Tracker数据同步完成", "平台 [" + platformName + "] 数据同步完成，新增 " + added + " 题。");
             }
         } catch (Exception e) {
             log.error("同步 {} 失败: {}", platformName, e.getClass().getSimpleName());
             if (notifyUser) {
-                notificationService.send(userId, 5, "CP Tracker数据同步失败", "平台 [" + platformName + "] 数据同步遇到问题: " + e.getClass().getSimpleName());
+                String detail = e instanceof TrackerSyncException ? e.getMessage() : "请稍后重试或联系管理员";
+                notificationService.send(userId, 5, "CP Tracker数据同步失败", "平台 [" + platformName + "] 数据同步遇到问题: " + detail);
             }
         }
     }
@@ -316,6 +337,7 @@ public class TrackerService {
         Long sourceId = platformIdMap.get(platformName);
         if (sourceId == null) {
             log.warn("平台 {} 未在数据库 oj_platform 表中配置", platformName);
+            if (EXTERNAL_PLATFORMS.contains(platformName)) throw new TrackerSyncException("未配置该平台，原统计已保留");
             return 0;
         }
 
@@ -325,10 +347,18 @@ public class TrackerService {
             Map<String, Object> body = crawlerLocalRunner.crawlSubmissions(platformName, handle, lastTime, clientId);
 
             if (body == null || !body.containsKey("submissions")) {
+                if (EXTERNAL_PLATFORMS.contains(platformName)) throw new TrackerSyncException("平台返回了无效数据，原统计已保留");
                 return 0;
             }
 
             List<Map<String, Object>> rawList = (List<Map<String, Object>>) body.get("submissions");
+
+            if (EXTERNAL_PLATFORMS.contains(platformName)) {
+                if (rawList == null || !Boolean.TRUE.equals(body.get("complete"))) {
+                    throw new TrackerSyncException("平台记录尚未完整获取，原统计已保留");
+                }
+                return trackerSnapshotService.reconcile(userId, sourceId, platformName, handle, rawList);
+            }
 
             List<OjPracticeRecord> existingList = practiceRecordMapper.selectSolvedProblems(userId, sourceId);
             Map<String, OjPracticeRecord> existingMap = existingList != null
@@ -416,7 +446,10 @@ public class TrackerService {
 
         } catch (Exception e) {
             log.error("爬取失败: User={}, Platform={}, Error={}", userId, platformName, e.getClass().getSimpleName());
-            org.slf4j.LoggerFactory.getLogger(TrackerService.class).warn("操作失败，请检查请求参数和服务配置");
+            if (EXTERNAL_PLATFORMS.contains(platformName)) {
+                if (e instanceof TrackerSyncException failure) throw failure;
+                throw new TrackerSyncException("请稍后重试或联系管理员");
+            }
             return 0;
         }
     }

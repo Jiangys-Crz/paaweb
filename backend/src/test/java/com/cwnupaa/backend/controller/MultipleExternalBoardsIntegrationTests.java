@@ -123,9 +123,13 @@ class MultipleExternalBoardsIntegrationTests {
         assertThat(jdbc.queryForObject("SELECT code_content FROM submit_record WHERE board_id=7", String.class)).isEqualTo("legacy-code");
         assertThat(jdbc.queryForObject("SELECT code_content FROM submit_record WHERE board_id=?", String.class, second)).isEqualTo("updated-code");
         open(7L, "历史榜"); open(second, "独立榜");
+        // The title is the parent competition; each board keeps its own session name.
         mvc.perform(get("/leaderboard/" + second)).andExpect(jsonPath("$.data.boardId").value(second))
-            .andExpect(jsonPath("$.data.eventId").value(7)).andExpect(jsonPath("$.data.title").value("独立榜"))
+            .andExpect(jsonPath("$.data.eventId").value(7)).andExpect(jsonPath("$.data.title").value("比赛甲"))
+            .andExpect(jsonPath("$.data.sessionName").value("独立榜"))
             .andExpect(jsonPath("$.data.rows[0].solved").value(1));
+        mvc.perform(get("/leaderboard/7")).andExpect(jsonPath("$.data.title").value("比赛甲"))
+            .andExpect(jsonPath("$.data.sessionName").value("历史榜"));
         mvc.perform(get("/leaderboard/" + second + "/stats")).andExpect(jsonPath("$.data.totalSubmissions").value(1));
         assertThat(service.ratingBoardId(7L)).isEqualTo(7L);
     }
@@ -214,6 +218,8 @@ class MultipleExternalBoardsIntegrationTests {
         open(second, "新外榜名称");
         mvc.perform(get("/leaderboard/list")).andExpect(jsonPath("$.data.length()").value(1))
             .andExpect(jsonPath("$.data[0].name").value("新外榜名称")).andExpect(jsonPath("$.data[0].eventName").value("比赛甲"));
+        mvc.perform(get("/leaderboard/" + second)).andExpect(jsonPath("$.data.title").value("比赛甲"))
+            .andExpect(jsonPath("$.data.sessionName").value("新外榜名称"));
         mvc.perform(delete("/leaderboard/admin/boards/" + second)).andExpect(jsonPath("$.code").value(200));
         assertThat(jdbc.queryForObject("SELECT count(*) FROM event_problem WHERE board_id=?", Integer.class, second)).isZero();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM submit_record WHERE board_id=?", Integer.class, second)).isZero();

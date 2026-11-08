@@ -47,6 +47,7 @@ import axios from 'axios';
 import dayjs from 'dayjs';
 import { useRouter } from 'next/navigation';
 import SiteHeader from '../components/SiteHeader';
+import { TrackerService } from '@/services/tracker.service';
 import { readStoredUser } from '@/utils/auth';
 import PageLoader from '../components/PageLoader';
 
@@ -150,6 +151,9 @@ export default function TrackerPage() {
   const [accounts, setAccounts] = useState<OjAccounts>({});
   const [upcoming, setUpcoming] = useState<UpcomingContest[]>([]);
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>([]);
+  const [syncPlatforms, setSyncPlatforms] = useState<string[]>([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncForm] = Form.useForm<{ clientId?: string; uid?: string }>();
   const [chartScope, setChartScope] = useState<'7d' | '30d' | '1y'>('30d');
   const [selectedYear, setSelectedYear] = useState<number>(dayjs().year());
   const [tableData, setTableData] = useState<SubmissionRecord[]>([]);
@@ -323,37 +327,22 @@ export default function TrackerPage() {
       return;
     }
 
-    let clientId = '';
-    Modal.confirm({
-      title: `同步 ${selectedPlatforms.length} 个平台的刷题数据`,
-      icon: <ReloadOutlined />,
-      content: (
-        <div style={{ marginTop: 10 }}>
-          <p>数据同步将在后台进行，您可继续浏览其他页面。</p>
-          <p>选中的平台: <b>{selectedPlatforms.join(', ')}</b></p>
-          {selectedPlatforms.includes('Luogu') && (
-            <p style={{ fontSize: 12, color: '#666', marginTop: 8 }}>
-              检测到包含 <b>洛谷(Luogu)</b>，请输入洛谷官网 Cookie 要求的 <b>__client_id</b>。本次填写后会保存，之后同步会优先使用已保存的值。
-            </p>
-          )}
-          {selectedPlatforms.includes('Luogu') && (
-            <Input placeholder="请输入 __client_id" onChange={event => { clientId = event.target.value; }} style={{ marginTop: 5 }} />
-          )}
-        </div>
-      ),
-      okText: '开始同步',
-      onOk: async () => {
-        try {
-          await axios.post('/api/tracker/refresh', null, {
-            params: { luoguClientId: clientId, platforms: selectedPlatforms.join(',') }
-          });
-          message.success('同步请求已发送，请稍后刷新页面查看最新数据');
-        } catch (error) {
-          if (axios.isAxiosError(error)) message.error((error.response?.data as { message?: string })?.message || '同步请求发送失败');
-          else message.error('同步请求发送失败');
-        }
-      }
-    });
+    setSyncPlatforms(selectedPlatforms);
+  };
+
+  const submitSync = async ({ clientId, uid }: { clientId?: string; uid?: string }) => {
+    const cookie = uid?.trim() ? `__client_id=${clientId?.trim()}; _uid=${uid.trim()}` : clientId?.trim();
+    setSyncing(true);
+    try {
+      await TrackerService.refreshTracker(syncPlatforms, cookie);
+      setSyncPlatforms([]);
+      message.success('同步请求已发送，请稍后刷新页面查看最新数据');
+    } catch (error) {
+      if (axios.isAxiosError(error)) message.error((error.response?.data as { message?: string })?.message || '同步请求发送失败');
+      else message.error('同步请求发送失败');
+    } finally {
+      setSyncing(false);
+    }
   };
 
   const jumpToProblem = (sourceId: number, problemId: string) => {
@@ -697,6 +686,52 @@ export default function TrackerPage() {
           </Sider>
         </Layout>
       </Layout>
+      <Modal
+        open={syncPlatforms.length > 0}
+        title={`同步 ${syncPlatforms.length} 个平台的刷题数据`}
+        okText="开始同步"
+        confirmLoading={syncing}
+        onOk={() => syncForm.submit()}
+        onCancel={() => setSyncPlatforms([])}
+        destroyOnHidden
+      >
+        <p>数据同步将在后台进行，您可继续浏览其他页面。</p>
+        <p>选中的平台：<b>{syncPlatforms.join(', ')}</b></p>
+        <Form form={syncForm} layout="vertical" preserve={false} onFinish={submitSync}>
+          {syncPlatforms.includes('Luogu') && (
+            <>
+              <p style={{ fontSize: 12, color: '#666' }}>
+                请分别填写同一次洛谷登录的两个值。如果登录的是已绑定账号，可以只填 __client_id。两项都留空则使用已保存的凭据。
+              </p>
+              <Form.Item
+                label="洛谷 __client_id"
+                name="clientId"
+                rules={[{ transform: (value?: string) => value?.trim(), pattern: /^[^;=\s]+$/, message: '请只填写 __client_id 的值' }]}
+              >
+                <Input.Password placeholder="请输入 __client_id 的值" autoComplete="off" />
+              </Form.Item>
+              <Form.Item
+                label="洛谷 _uid"
+                name="uid"
+                dependencies={['clientId']}
+                rules={[
+                  { transform: (value?: string) => value?.trim(), pattern: /^\d+$/, message: '请输入数字 UID' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value?: string) {
+                      if (value?.trim() && !getFieldValue('clientId')?.trim()) {
+                        return Promise.reject(new Error('填写 _uid 时也请填写 __client_id'));
+                      }
+                      return Promise.resolve();
+                    }
+                  })
+                ]}
+              >
+                <Input placeholder="请输入 _uid 的值" inputMode="numeric" />
+              </Form.Item>
+            </>
+          )}
+        </Form>
+      </Modal>
     </>
   );
 }
